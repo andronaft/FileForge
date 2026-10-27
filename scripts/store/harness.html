@@ -1,0 +1,122 @@
+<!doctype html>
+<!-- Loads the app in a 1280x760 frame, drops generated demo files into the chosen tool and runs it, so a
+     headless browser can screenshot a filled-in tool. ?shot=<name>, names in SHOTS below. -->
+<meta charset="utf-8">
+<style>html,body{margin:0;background:#fff} iframe{display:block;width:1280px;height:760px;border:0}</style>
+<iframe id="app"></iframe>
+<script>
+const shot = new URLSearchParams(location.search).get("shot") || "crop";
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- demo files, generated here so nothing has to be committed ----
+function photo(name = "sunset.jpg", w = 1600, h = 1067) {
+  const c = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  const g = c.getContext("2d");
+  const sky = g.createLinearGradient(0, 0, 0, h * 0.7);
+  sky.addColorStop(0, "#1c2a5a"); sky.addColorStop(0.45, "#c2497a"); sky.addColorStop(0.8, "#ff9a3c"); sky.addColorStop(1, "#ffd27a");
+  g.fillStyle = sky; g.fillRect(0, 0, w, h);
+  g.fillStyle = "#fff3c4"; g.beginPath(); g.arc(w * 0.62, h * 0.66, h * 0.09, 0, Math.PI * 2); g.fill();
+  const sea = g.createLinearGradient(0, h * 0.68, 0, h);
+  sea.addColorStop(0, "#f08a4b"); sea.addColorStop(1, "#2b2f5a");
+  g.fillStyle = sea; g.fillRect(0, h * 0.68, w, h * 0.32);
+  g.fillStyle = "rgba(255,230,160,.45)";
+  for (let i = 0; i < 14; i++) g.fillRect(w * 0.62 - 20 - i * 6, h * 0.69 + i * 11, 40 + i * 12, 3);
+  const hills = (color, base, amp, seed) => {
+    g.fillStyle = color; g.beginPath(); g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 20) g.lineTo(x, base - amp * (0.6 + 0.4 * Math.sin(x / 190 + seed)) * (0.7 + 0.3 * Math.sin(x / 61 + seed * 2)));
+    g.lineTo(w, h); g.closePath(); g.fill();
+  };
+  hills("#3a2a52", h * 0.72, h * 0.16, 1); hills("#241a3a", h * 0.78, h * 0.12, 4); hills("#120d22", h * 0.9, h * 0.08, 9);
+  g.fillStyle = "#0b0816";
+  for (const [x, hh] of [[0.12, 0.2], [0.14, 0.26], [0.17, 0.18], [0.82, 0.22], [0.86, 0.28], [0.9, 0.17]]) {
+    g.beginPath(); g.moveTo(w * x - 18, h); g.lineTo(w * x, h - h * hh); g.lineTo(w * x + 18, h); g.fill();
+  }
+  return new Promise((r) => c.toBlob((b) => r(new win.File([b], name, { type: "image/jpeg" })), "image/jpeg", 0.95));
+}
+function logo(name = "logo.png", size = 1024) {
+  const c = Object.assign(document.createElement("canvas"), { width: size, height: size });
+  const g = c.getContext("2d");
+  g.fillStyle = "#1b1f27"; g.beginPath(); g.roundRect(0, 0, size, size, size * 0.22); g.fill();
+  g.fillStyle = "#ff8c28"; g.beginPath(); g.arc(size / 2, size / 2, size * 0.3, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#1b1f27"; g.beginPath(); g.arc(size * 0.62, size * 0.42, size * 0.12, 0, Math.PI * 2); g.fill();
+  return new Promise((r) => c.toBlob((b) => r(new win.File([b], name, { type: "image/png" })), "image/png"));
+}
+async function pdf(name, title, pages, color) {
+  const { PDFDocument, StandardFonts, rgb } = win.PDFLib;
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.HelveticaBold);
+  const body = await doc.embedFont(StandardFonts.Helvetica);
+  for (let i = 1; i <= pages; i++) {
+    const p = doc.addPage(win.PDFLib.PageSizes.A4);
+    p.drawRectangle({ x: 0, y: 782, width: 595, height: 60, color });
+    p.drawText(title, { x: 40, y: 804, size: 20, font, color: rgb(1, 1, 1) });
+    p.drawText(`Page ${i} of ${pages}`, { x: 40, y: 740, size: 12, font: body, color: rgb(0.4, 0.4, 0.4) });
+    for (let l = 0; l < 28; l++) p.drawRectangle({ x: 40, y: 700 - l * 22, width: 200 + ((l * 137) % 300), height: 8, color: rgb(0.85, 0.85, 0.88) });
+  }
+  return new win.File([await doc.save()], name, { type: "application/pdf" });
+}
+
+const MD = `# Weekly report\n\n**Team:** Platform · **Week:** 43\n\n## Done\n\n- Shipped the new upload pipeline (2.4× faster)\n- Fixed the retry storm in the queue worker\n- Migrated 3 services to the shared logging library\n\n## Next\n\n1. Roll out dark mode to the dashboard\n2. Cut cold-start time below 300 ms\n\n> Everything stays on your device — FileForge never uploads a file.\n\n| Metric | Before | After |\n|---|---|---|\n| p95 latency | 840 ms | 310 ms |\n| Errors / day | 112 | 4 |\n`;
+const JSON_TEXT = `{"order":{"id":"A-10422","customer":{"name":"Olena Kovalenko","email":"olena@example.com","vip":true},"items":[{"sku":"MUG-01","qty":2,"price":12.5},{"sku":"TEE-M","qty":1,"price":24}],"shipping":{"method":"nova-poshta","city":"Lviv","eta_days":2},"total":49,"paid":true}}`;
+
+// ---- driving the app ----
+const frame = document.getElementById("app");
+let win = null; // the app's window, set once the frame has loaded
+const $ = (sel, root) => (root || frame.contentDocument).querySelector(sel);
+const $$ = (sel, root) => [...(root || frame.contentDocument).querySelectorAll(sel)];
+async function until(fn, timeout = 20000) {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeout) { const v = fn(); if (v) return v; await sleep(100); }
+  throw new Error("timeout waiting");
+}
+function drop(files) {
+  const dt = new win.DataTransfer();
+  files.forEach((f) => dt.items.add(f));
+  $(".dropzone").dispatchEvent(new win.DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+}
+function setInput(labelText, value) {
+  const field = $$(".options .field, .options label").find((f) => f.textContent.trim().startsWith(labelText));
+  const input = field.querySelector("input, select, textarea");
+  input.value = value;
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+async function run() {
+  $("button.primary").click();
+  await until(() => !$(".results").hidden);
+  await sleep(300);
+}
+function textarea(text, i = 0) {
+  const ta = $$(".options textarea")[i];
+  ta.value = text;
+  ta.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+const SHOTS = {
+  // a wide photo keeps the whole crop stage inside the frame; 52 scrolls the top bar away (a shot may return a scroll offset)
+  async crop() { drop([await photo("sunset.jpg", 2000, 900)]); await until(() => $(".crop-stage canvas, .crop-stage img")); setInput("Aspect ratio", String(16 / 9)); await sleep(400); return 52; },
+  async compress() { drop([await photo()]); await until(() => $(".options")); setInput("Quality", "70"); await run(); },
+  async watermark() { drop([await photo()]); await until(() => $(".options")); setInput("Text", "© Andrii Photography"); setInput("Opacity", "60"); await sleep(600); },
+  async favicons() { drop([await logo()]); await until(() => $(".options")); await run(); },
+  async "pdf-merge"() {
+    drop([await pdf("contract.pdf", "Service agreement", 3, win.PDFLib.rgb(0.1, 0.2, 0.45)), await pdf("appendix-A.pdf", "Appendix A", 2, win.PDFLib.rgb(0.6, 0.15, 0.3)), await pdf("invoice-2026-10.pdf", "Invoice", 1, win.PDFLib.rgb(0.1, 0.45, 0.3))]);
+    await until(() => $$(".files li").length === 3); await sleep(300);
+  },
+  async "pdf-to-images"() { drop([await pdf("slides.pdf", "Quarterly review", 4, win.PDFLib.rgb(0.1, 0.2, 0.45))]); await until(() => $(".options")); await run(); },
+  async "md-to-pdf"() { await until(() => $(".options textarea")); textarea(MD); await sleep(800); },
+  async "json-format"() { await until(() => $(".options textarea")); textarea(JSON_TEXT); await run(); },
+};
+
+(async () => {
+  frame.src = `../../app/index.html?store=1#${shot}`;
+  await new Promise((r) => (frame.onload = r));
+  win = frame.contentWindow;
+  win.HTMLAnchorElement.prototype.click = () => {}; // no downloads while taking screenshots
+  await until(() => $(".dropzone, .options"));
+  const scrollY = await SHOTS[shot]();
+  win.scrollTo(0, scrollY || 0);
+  await sleep(200);
+  document.body.append(Object.assign(document.createElement("div"), { id: "ready" }));
+  document.title = "ready";
+})().catch((e) => { document.title = "error: " + e.message; console.error(e); });
+</script>

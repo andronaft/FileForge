@@ -70,6 +70,9 @@ https://andronaft.github.io/FileForge/privacy.html
 ## Assets
 
 - Icon: `icons/icon128.png`
-- Screenshots: 1280×800 JPEG or PNG without transparency, at least one, up to five (`docs/store/`)
-- Small promo tile: 440×280 (`docs/store/promo-small-440x280.jpg`)
-- Marquee (optional): 1400×560
+- Screenshots, 1280×800 JPEG: `docs/store/1-crop.jpg` … `5-pdf-to-images.jpg` (upload in order); addons.mozilla.org also
+  takes `6-watermark.jpg` … `8-favicons.jpg`
+- Small promo tile, 440×280: `docs/store/promo-small-440x280.jpg`
+- Marquee, 1400×560: `docs/store/promo-marquee-1400x560.jpg`
+- Regenerate all of them with `python3 scripts/store_assets.py` (uses the installed Chrome headless; the plain app
+  screenshots land in `docs/screenshots/`)

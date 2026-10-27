@@ -7,6 +7,8 @@ Works two ways:
 - as a **Chrome extension** (right-click any image → "Edit image in FileForge"), or
 - as a plain **web app** served from any static host.
 
+![Crop image in FileForge](docs/screenshots/crop.png)
+
 ## Tools
 
 | Group | Tool | What it does |

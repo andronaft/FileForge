@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Promo tiles: ?kind=small (440x280) or ?kind=marquee (1400x560, &img=<app screenshot>) -->
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { overflow: hidden; color: #f3efe6; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: radial-gradient(ellipse at top left, #2a2f3d 0%, #14171f 60%); display: flex; align-items: center; }
+  .accent { color: #ff8c28; }
+  body.small { width: 440px; height: 280px; gap: 22px; padding: 0 30px; }
+  body.small img { width: 104px; height: 104px; border-radius: 22px; }
+  body.small h1 { font-size: 42px; font-weight: 800; letter-spacing: -.5px; }
+  body.small p { font-size: 17px; color: #a9afbb; margin-top: 6px; line-height: 1.35; }
+  body.marquee { width: 1400px; height: 560px; gap: 56px; padding-left: 90px; }
+  .brand { display: flex; align-items: center; gap: 22px; margin-bottom: 22px; }
+  .brand img { width: 96px; height: 96px; border-radius: 20px; }
+  body.marquee h1 { font-size: 64px; font-weight: 800; letter-spacing: -1px; }
+  body.marquee p { font-size: 26px; color: #a9afbb; line-height: 1.4; }
+  .shot { width: 760px; height: 470px; object-fit: cover; object-position: left top; border-radius: 10px 0 0 10px; border: 1px solid #3a4050; box-shadow: 0 18px 50px rgba(0,0,0,.55); }
+</style>
+<body></body>
+<script>
+  const q = new URLSearchParams(location.search);
+  const kind = q.get("kind") || "small";
+  document.body.className = kind;
+  const icon = "../../icons/icon128.png";
+  document.body.innerHTML = kind === "small"
+    ? `<img src="${icon}"><div><h1>File<span class="accent">Forge</span></h1><p>Images, PDF &amp; file tools.<br>100% on your device.</p></div>`
+    : `<div><div class="brand"><img src="${icon}"><h1>File<span class="accent">Forge</span></h1></div>
+       <p>Crop, compress &amp; convert images,<br>merge &amp; split PDFs, Markdown → PDF.<br>Nothing is uploaded.</p></div>
+       <img class="shot" src="${q.get("img")}">`;
+</script>
