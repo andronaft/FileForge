@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FileForge</title>
+  <link rel="icon" href="../icons/icon32.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><img src="../icons/icon32.png" alt="" width="24" height="24"><span>FileForge</span></a>
+    <span class="tagline">Images · PDF · Markdown — everything runs on your device, nothing is uploaded</span>
+  </header>
+  <div class="layout">
+    <nav class="sidebar" id="nav" aria-label="Tools"></nav>
+    <main class="main" id="main"></main>
+  </div>
+  <div id="toast" class="toast" hidden></div>
+  <script src="../vendor/jszip.min.js"></script>
+  <script src="../vendor/pdf-lib.min.js"></script>
+  <script src="../vendor/marked.min.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
