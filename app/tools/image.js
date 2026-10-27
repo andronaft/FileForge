@@ -67,6 +67,35 @@ function resizeStage(src, targetW, targetH) {
   return c;
 }
 
+/** Draw text onto a copy of the image. wm: {text, position, sizePct, opacity, color} */
+function watermarkStage(src, wm) {
+  const { w, h } = dims(src);
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext("2d");
+  ctx.drawImage(src, 0, 0);
+  const size = Math.max(10, Math.round((w * (wm.sizePct || 5)) / 100));
+  ctx.font = `bold ${size}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
+  ctx.globalAlpha = wm.opacity ?? 0.5;
+  ctx.fillStyle = wm.color || "#ffffff";
+  ctx.shadowColor = "rgba(0,0,0,.5)";
+  ctx.shadowBlur = size / 8;
+  const pad = Math.round(size * 0.6);
+  if (wm.position === "tile") {
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.translate(w / 2, h / 2); ctx.rotate(-Math.PI / 6);
+    const step = size * 4, tw = ctx.measureText(wm.text).width + size * 2;
+    for (let yy = -h; yy < h; yy += step) for (let xx = -w - tw; xx < w + tw; xx += tw) ctx.fillText(wm.text, xx, yy);
+    return c;
+  }
+  const [vert, horiz] = (wm.position || "bottom-right").split("-");
+  ctx.textBaseline = vert === "top" ? "top" : vert === "middle" ? "middle" : "bottom";
+  ctx.textAlign = horiz === "left" ? "left" : horiz === "center" ? "center" : "right";
+  const x = horiz === "left" ? pad : horiz === "center" ? w / 2 : w - pad;
+  const y = vert === "top" ? pad : vert === "middle" ? h / 2 : h - pad;
+  ctx.fillText(wm.text, x, y);
+  return c;
+}
+
 const MIME = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
@@ -102,6 +131,7 @@ export async function processImage(file, ops) {
   if (ops.crop) cur = cropStage(cur, ops.crop);
   cur = transformStage(cur, ops.rotate || 0, ops.flipH, ops.flipV);
   if (ops.width && ops.height) cur = resizeStage(cur, ops.width, ops.height);
+  if (ops.watermark) cur = watermarkStage(cur, ops.watermark);
   const mime = ops.format === "keep" || !ops.format ? (formatOf(file) || "image/png") : MIME[ops.format];
   const out = dims(cur);
   const blob = await encode(cur, mime, (ops.quality ?? 90) / 100);
@@ -456,4 +486,196 @@ const convertTool = {
   },
 };
 
-export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool];
+// ---------- watermark ----------
+
+const watermarkTool = {
+  id: "watermark",
+  title: "Watermark image",
+  description: "Stamp text onto one or many images: a corner, the centre, or a repeated diagonal tile.",
+  accept: "image/*",
+  hint: "JPG, PNG, WebP — multiple files allowed",
+  runLabel: "Add watermark",
+  renderOptions(root, files) {
+    const text = el("input", { type: "text", value: this.last?.text || "© FileForge", placeholder: "Your text" });
+    const position = select([["bottom-right", "Bottom right"], ["bottom-left", "Bottom left"], ["bottom-center", "Bottom centre"], ["top-right", "Top right"], ["top-left", "Top left"], ["middle-center", "Centre"], ["tile", "Tiled diagonal"]], this.last?.position || "bottom-right");
+    const sizePct = number(this.last?.sizePct || 5, { min: 1, max: 50 });
+    const opacity = el("input", { type: "range", min: 5, max: 100, value: Math.round((this.last?.opacity || 0.5) * 100) });
+    const oLabel = el("span", { class: "stat", text: `${opacity.value}%` });
+    opacity.addEventListener("input", () => { oLabel.textContent = `${opacity.value}%`; });
+    const color = el("input", { type: "color", value: this.last?.color || "#ffffff" });
+    const fq = formatQualityRow();
+    const wrap = el("div", { class: "preview-wrap" });
+    let base = null;
+    const opts = () => ({ text: text.value, position: position.value, sizePct: Number(sizePct.value), opacity: Number(opacity.value) / 100, color: color.value });
+    const redraw = () => {
+      if (!base) return;
+      this.last = opts();
+      const c = watermarkStage(base.canvas, this.last);
+      c.className = "preview";
+      wrap.replaceChildren(c);
+    };
+    for (const i of [text, position, sizePct, opacity, color]) i.addEventListener("input", redraw);
+    root.append(
+      el("div", { class: "row" }, [field("Text", text), field("Position", position), field("Size (% of width)", sizePct), field("Opacity", el("div", { class: "row" }, [opacity, oLabel])), field("Colour", color)]),
+      wrap, fq.row,
+    );
+    previewOf(files[0], 420).then((p) => { base = p; redraw(); }).catch((err) => toast(err.message, "error"));
+    this.opts = opts; this.fq = fq;
+  },
+  async run(files) {
+    const wm = this.opts();
+    if (!wm.text.trim()) throw new Error("Enter the watermark text");
+    const out = [];
+    for (const file of files) {
+      const r = await processImage(file, { watermark: wm, format: this.fq.format, quality: this.fq.quality });
+      out.push({ name: outName(file, r.mime, "watermarked"), blob: r.blob, note: `${r.width} × ${r.height}` });
+    }
+    return out;
+  },
+};
+
+// ---------- favicons / app icons ----------
+
+function buildIco(pngs) {
+  // ICO container with PNG-compressed entries (supported by every modern browser and Windows Vista+).
+  const header = new Uint8Array(6 + 16 * pngs.length);
+  const dv = new DataView(header.buffer);
+  dv.setUint16(2, 1, true); dv.setUint16(4, pngs.length, true);
+  let offset = header.length;
+  const parts = [header];
+  pngs.forEach((p, i) => {
+    const o = 6 + i * 16;
+    header[o] = p.size >= 256 ? 0 : p.size; header[o + 1] = p.size >= 256 ? 0 : p.size;
+    dv.setUint16(o + 4, 1, true); dv.setUint16(o + 6, 32, true);
+    dv.setUint32(o + 8, p.bytes.length, true); dv.setUint32(o + 12, offset, true);
+    offset += p.bytes.length;
+    parts.push(p.bytes);
+  });
+  return new Blob(parts, { type: "image/x-icon" });
+}
+
+const faviconTool = {
+  id: "favicons",
+  title: "Favicon & app icons",
+  description: "Turn one square-ish image into the full icon set: favicon.ico, PNGs for browsers, Apple touch icon and PWA icons, plus a ready-made HTML snippet.",
+  accept: "image/*",
+  multiple: false,
+  hint: "One image, ideally square and at least 512 × 512",
+  runLabel: "Generate icons",
+  renderOptions(root, files) {
+    const sizes = [16, 32, 48, 64, 96, 128, 180, 192, 256, 512];
+    const boxes = sizes.map((s) => checkbox(`${s}`, true));
+    const ico = checkbox("favicon.ico (16 + 32 + 48)", true);
+    const pad = checkbox("Pad non-square images to a square (transparent)", true);
+    const info = el("div", { class: "stat" });
+    root.append(el("div", { class: "row" }, [el("span", { class: "field-label", text: "PNG sizes" }), ...boxes.map((b) => b.label)]), el("div", { class: "row" }, [ico.label, pad.label]), info);
+    sizeOf(files[0]).then((d) => { info.textContent = `${files[0].name}: ${d.w} × ${d.h} px${d.w !== d.h ? " (not square)" : ""}`; }).catch(() => {});
+    this.opts = { sizes, boxes, ico, pad };
+  },
+  async run(files) {
+    const o = this.opts;
+    const img = await loadImage(files[0]);
+    const d = dims(img);
+    let square = img;
+    if (d.w !== d.h && o.pad.input.checked) {
+      const s = Math.max(d.w, d.h);
+      const c = makeCanvas(s, s);
+      c.getContext("2d").drawImage(img, (s - d.w) / 2, (s - d.h) / 2);
+      square = c;
+    } else if (d.w !== d.h) {
+      const s = Math.min(d.w, d.h);
+      square = cropStage(img, { x: (d.w - s) / 2, y: (d.h - s) / 2, w: s, h: s });
+    }
+    const chosen = o.sizes.filter((_, i) => o.boxes[i].input.checked);
+    if (!chosen.length && !o.ico.input.checked) throw new Error("Pick at least one size");
+    const out = [];
+    const pngAt = async (s) => encode(resizeStage(square, s, s), "image/png");
+    const byName = (s) => s === 180 ? "apple-touch-icon.png" : s === 192 ? "android-chrome-192x192.png" : s === 512 ? "android-chrome-512x512.png" : `favicon-${s}x${s}.png`;
+    for (const s of chosen) out.push({ name: byName(s), blob: await pngAt(s), note: `${s} × ${s}` });
+    if (o.ico.input.checked) {
+      const entries = [];
+      for (const s of [16, 32, 48]) entries.push({ size: s, bytes: new Uint8Array(await (await pngAt(s)).arrayBuffer()) });
+      out.push({ name: "favicon.ico", blob: buildIco(entries), note: "16 + 32 + 48" });
+    }
+    const snippet = [
+      o.ico.input.checked ? '<link rel="icon" href="/favicon.ico" sizes="any">' : null,
+      chosen.includes(32) ? '<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">' : null,
+      chosen.includes(16) ? '<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">' : null,
+      chosen.includes(180) ? '<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">' : null,
+      chosen.includes(192) || chosen.includes(512) ? '<link rel="manifest" href="/site.webmanifest">' : null,
+    ].filter(Boolean).join("\n");
+    out.push({ name: "favicon-snippet.html", blob: new Blob([snippet + "\n"], { type: "text/html" }), note: "paste into <head>" });
+    if (chosen.includes(192) || chosen.includes(512)) {
+      const manifest = { name: "", short_name: "", icons: [192, 512].filter((s) => chosen.includes(s)).map((s) => ({ src: `/android-chrome-${s}x${s}.png`, sizes: `${s}x${s}`, type: "image/png" })), theme_color: "#ffffff", background_color: "#ffffff", display: "standalone" };
+      out.push({ name: "site.webmanifest", blob: new Blob([JSON.stringify(manifest, null, 2)], { type: "application/manifest+json" }), note: "PWA manifest" });
+    }
+    if (img.close) img.close();
+    return out;
+  },
+};
+
+// ---------- HEIC ----------
+// heic2any (libheif) needs eval, which extension pages forbid, so it runs inside a sandboxed iframe.
+
+let heicFrame = null;
+let heicSeq = 0;
+const heicPending = new Map();
+
+function heicSandbox() {
+  if (heicFrame) return heicFrame.ready;
+  const frame = el("iframe", { src: "heic-sandbox.html", hidden: true, title: "HEIC decoder" });
+  frame.ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("HEIC decoder did not start. In the Firefox extension HEIC is unavailable; use the web version instead.")), 15000);
+    window.addEventListener("message", (e) => {
+      if (e.source !== frame.contentWindow || !e.data) return;
+      if (e.data.type === "heic-ready") { clearTimeout(timer); resolve(frame); return; }
+      const p = heicPending.get(e.data.id);
+      if (!p) return;
+      heicPending.delete(e.data.id);
+      if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data.buffers);
+    });
+  });
+  document.body.append(frame);
+  heicFrame = frame;
+  return frame.ready;
+}
+
+async function decodeHeic(file, toType, quality) {
+  const frame = await heicSandbox();
+  const id = ++heicSeq;
+  const buffer = await file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    heicPending.set(id, { resolve, reject });
+    frame.contentWindow.postMessage({ id, buffer, toType, quality }, "*", [buffer]);
+  });
+}
+
+const heicTool = {
+  id: "heic",
+  title: "HEIC to JPG",
+  description: "Convert iPhone HEIC/HEIF photos to JPEG, PNG or WebP. Multi-image HEIC files produce one output per frame.",
+  accept: ".heic,.heif,image/heic,image/heif",
+  hint: "HEIC or HEIF files from an iPhone or iPad — multiple files allowed",
+  runLabel: "Convert",
+  renderOptions(root) {
+    const fq = formatQualityRow("jpeg");
+    root.append(fq.row);
+    this.fq = fq;
+    heicSandbox().catch(() => {});
+  },
+  async run(files) {
+    const fmt = this.fq.format === "keep" ? "jpeg" : this.fq.format;
+    const mime = MIME[fmt];
+    const out = [];
+    for (const file of files) {
+      const buffers = await decodeHeic(file, mime, this.fq.quality / 100);
+      buffers.forEach((buf, i) => {
+        const blob = new Blob([buf], { type: mime });
+        out.push({ name: `${baseName(file.name)}${buffers.length > 1 ? `-${i + 1}` : ""}.${EXT[mime]}`, blob, note: formatBytes(blob.size) });
+      });
+    }
+    return out;
+  },
+};
+
+export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, watermarkTool, faviconTool];

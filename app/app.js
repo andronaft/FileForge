@@ -2,11 +2,12 @@ import { el, formatBytes, download, zipFiles, toast } from "./util.js";
 import { imageTools } from "./tools/image.js";
 import { pdfTools } from "./tools/pdf.js";
 import { markdownTools } from "./tools/markdown.js";
+import { dataTools } from "./tools/data.js";
 
 const groups = [
   { title: "Images", tools: imageTools },
   { title: "PDF", tools: pdfTools },
-  { title: "Markdown", tools: markdownTools },
+  { title: "Text & data", tools: [...markdownTools, ...dataTools] },
 ];
 const tools = groups.flatMap((g) => g.tools);
 const nav = document.getElementById("nav");
@@ -40,6 +41,7 @@ function mount() {
   state.tool = tool;
   state.files = [];
   state.results = [];
+  state.busy = false;
   document.title = `${tool.title} · FileForge`;
   renderNav();
 
@@ -89,7 +91,7 @@ function mount() {
 function addFiles(incoming) {
   const tool = state.tool;
   const accepted = incoming.filter((f) => {
-    if (!tool.accept) return true;
+    if (!tool.accept || tool.accept === "*/*") return true;
     const ok = tool.accept.split(",").some((pattern) => {
       pattern = pattern.trim();
       if (pattern.endsWith("/*")) return f.type.startsWith(pattern.slice(0, -1));
@@ -189,7 +191,7 @@ async function run() {
     renderResults();
     if (state.results.length) {
       ui.results.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      if (state.results.length === 1) download(state.results[0].blob, state.results[0].name);
+      if (state.results.length === 1 && !tool.noAutoDownload) download(state.results[0].blob, state.results[0].name);
     }
   } catch (err) {
     console.error(err);

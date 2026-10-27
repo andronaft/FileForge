@@ -1,29 +1,31 @@
-// FileForge service worker: opens the app and wires the image context menu.
-const APP_URL = chrome.runtime.getURL("app/index.html");
+// FileForge background script: opens the app and wires the image context menu.
+// Works as a Chrome MV3 service worker and as a Firefox MV3 event page.
+const api = globalThis.browser ?? globalThis.chrome;
+const APP_URL = api.runtime.getURL("app/index.html");
 
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.create({
+api.runtime.onInstalled.addListener(() => {
+  api.contextMenus.create({
     id: "fileforge-image",
     title: "Edit image in FileForge",
     contexts: ["image"],
   });
 });
 
-chrome.action.onClicked.addListener(() => {
-  chrome.tabs.create({ url: APP_URL });
+api.action.onClicked.addListener(() => {
+  api.tabs.create({ url: APP_URL });
 });
 
-chrome.contextMenus.onClicked.addListener(async (info) => {
+api.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId !== "fileforge-image" || !info.srcUrl) return;
   let granted = false;
   try {
     const origin = new URL(info.srcUrl).origin + "/*";
-    granted = await chrome.permissions.request({ origins: [origin] });
+    granted = await api.permissions.request({ origins: [origin] });
   } catch (_) {
     granted = false;
   }
   const url = new URL(APP_URL);
-  url.searchParams.set("tool", "image");
+  url.searchParams.set("tool", "crop");
   if (granted) url.searchParams.set("src", info.srcUrl);
-  chrome.tabs.create({ url: url.toString() });
+  api.tabs.create({ url: url.toString() });
 });
