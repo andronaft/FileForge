@@ -1,10 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "FileForge",
-  "version": "0.2.0",
-  "description": "Crop, resize, compress and convert images (incl. HEIC), merge/split/compress PDFs, Markdown to PDF, CSV/JSON tools. 100% on your device, nothing is uploaded.",
+  "name": "__MSG_name__",
+  "short_name": "__MSG_shortName__",
+  "version": "0.3.0",
+  "description": "__MSG_description__",
+  "default_locale": "en",
+  "homepage_url": "https://andronaft.github.io/FileForge/",
   "action": {
-    "default_title": "Open FileForge"
+    "default_title": "__MSG_actionTitle__"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+F"
+      },
+      "description": "__MSG_commandOpen__"
+    }
   },
   "background": {
     "service_worker": "background.js"
@@ -19,12 +30,12 @@
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",
     "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
+    "128": "icons/icon128.png",
+    "256": "icons/icon256.png"
   },
   "sandbox": {
     "pages": [
       "app/heic-sandbox.html"
     ]
-  },
-  "homepage_url": "https://github.com/andronaft/FileForge"
+  }
 }

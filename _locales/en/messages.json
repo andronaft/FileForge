@@ -1,0 +1,9 @@
+{
+  "name": { "message": "FileForge: image, PDF & file tools" },
+  "shortName": { "message": "FileForge" },
+  "description": { "message": "Crop, resize, compress & convert images (incl. HEIC), merge/split PDFs, Markdown → PDF, CSV/JSON. 100% on your device." },
+  "actionTitle": { "message": "Open FileForge" },
+  "menuImage": { "message": "Edit image in FileForge" },
+  "menuPdf": { "message": "Open PDF in FileForge" },
+  "commandOpen": { "message": "Open FileForge" }
+}

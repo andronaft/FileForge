@@ -1,0 +1,9 @@
+{
+  "name": { "message": "FileForge: фото, PDF та файли" },
+  "shortName": { "message": "FileForge" },
+  "description": { "message": "Обрізка, стиснення й конвертація фото (і HEIC), злиття та розділення PDF, Markdown → PDF, CSV/JSON. Усе на вашому пристрої." },
+  "actionTitle": { "message": "Відкрити FileForge" },
+  "menuImage": { "message": "Редагувати зображення у FileForge" },
+  "menuPdf": { "message": "Відкрити PDF у FileForge" },
+  "commandOpen": { "message": "Відкрити FileForge" }
+}

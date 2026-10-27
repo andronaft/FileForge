@@ -16,7 +16,7 @@ import json, pathlib, shutil, zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
-INCLUDE = ["background.js", "app", "icons", "vendor", "LICENSE", "PRIVACY.md"]
+INCLUDE = ["background.js", "_locales", "app", "icons", "vendor", "LICENSE", "PRIVACY.md"]
 SKIP_SUFFIX = (".DS_Store",)
 
 AMO_ID = "fileforge@andronaft.github.io"

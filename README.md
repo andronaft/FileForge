@@ -14,12 +14,13 @@ Works two ways:
 | Group | Tool | What it does |
 | --- | --- | --- |
 | Images | Crop | Drag a rectangle or type exact pixels, aspect-ratio presets |
-| Images | Resize | By pixels or percent, batch, keeps aspect ratio, never enlarges unless asked |
+| Images | Resize | Presets (4K, Full HD, HD…), pixels or percent, batch, keeps aspect ratio |
 | Images | Rotate & flip | 90° / 180° / 270°, mirror horizontally or vertically, batch |
-| Images | Compress | Quality slider plus optional max dimension, shows how much was saved |
+| Images | Compress | Quality slider, target size in KB, optional max dimension, shows how much was saved |
 | Images | Convert | JPEG ⇄ PNG ⇄ WebP (GIF, BMP, SVG, AVIF accepted as input) |
 | Images | HEIC to JPG | iPhone HEIC/HEIF → JPEG, PNG or WebP (libheif in a sandboxed frame) |
 | Images | Watermark | Text in a corner, centred, or tiled diagonally, with live preview |
+| Images | Remove metadata | Strip EXIF, GPS, XMP, IPTC and comments from JPG/PNG/WebP without re-encoding |
 | Images | Favicon & app icons | favicon.ico + PNG set + Apple touch + PWA icons + HTML snippet + webmanifest |
 | PDF | Merge | Combine PDFs in the order you choose |
 | PDF | Split | Extract page ranges, every page separately, or chunks of N pages |

@@ -39,7 +39,9 @@ function requestedToolId() {
 function mount() {
   const tool = tools.find((t) => t.id === requestedToolId()) || tools[0];
   state.tool = tool;
-  state.files = [];
+  // Files stay loaded when switching to another tool that takes them (e.g. crop → compress).
+  state.files = state.files.filter((f) => accepts(tool, f));
+  if (tool.multiple === false) state.files = state.files.slice(0, 1);
   state.results = [];
   state.busy = false;
   document.title = `${tool.title} · FileForge`;
@@ -88,16 +90,20 @@ function mount() {
   refresh();
 }
 
+function accepts(tool, f) {
+  if (!tool.accept || tool.accept === "*/*") return true;
+  return tool.accept.split(",").some((pattern) => {
+    pattern = pattern.trim();
+    if (pattern.endsWith("/*")) return f.type.startsWith(pattern.slice(0, -1));
+    if (pattern.startsWith(".")) return f.name.toLowerCase().endsWith(pattern.toLowerCase());
+    return f.type === pattern;
+  });
+}
+
 function addFiles(incoming) {
   const tool = state.tool;
   const accepted = incoming.filter((f) => {
-    if (!tool.accept || tool.accept === "*/*") return true;
-    const ok = tool.accept.split(",").some((pattern) => {
-      pattern = pattern.trim();
-      if (pattern.endsWith("/*")) return f.type.startsWith(pattern.slice(0, -1));
-      if (pattern.startsWith(".")) return f.name.toLowerCase().endsWith(pattern.toLowerCase());
-      return f.type === pattern;
-    });
+    const ok = accepts(tool, f);
     if (!ok) toast(`Skipped ${f.name}: not a supported file type for this tool`, "error");
     return ok;
   });
@@ -211,12 +217,19 @@ async function loadFromSrc() {
     const res = await fetch(src);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
-    if (!blob.type.startsWith("image/")) throw new Error("not an image");
-    const name = decodeURIComponent(new URL(src).pathname.split("/").pop() || "image") || "image";
-    addFiles([new File([blob], name.includes(".") ? name : `${name}.${blob.type.split("/")[1] || "png"}`, { type: blob.type })]);
+    const name = decodeURIComponent(new URL(src).pathname.split("/").pop() || "file") || "file";
+    const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+    const type = blob.type && blob.type !== "application/octet-stream" ? blob.type
+      : ext === "pdf" ? "application/pdf" : ext === "jpg" ? "image/jpeg" : ext ? `image/${ext}` : "";
+    addFiles([new File([blob], name.includes(".") ? name : `${name}.${type.split("/")[1] || "bin"}`, { type })]);
   } catch (err) {
-    toast("Could not load that image automatically. Save it and drop it here instead.", "error");
+    toast("Could not load that file automatically. Save it and drop it here instead.", "error");
   }
+}
+
+// The web build (GitHub Pages) works offline through a service worker; the extension needs none.
+if (document.documentElement.dataset.site && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 
 window.addEventListener("hashchange", mount);

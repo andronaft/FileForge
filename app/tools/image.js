@@ -1,10 +1,11 @@
+import { metadataTool } from "./metadata.js";
 import { el, baseName, field, select, number, checkbox, formatBytes, toast } from "../util.js";
 
 // ---------- image engine ----------
 
 async function loadImage(file) {
   try {
-    return await createImageBitmap(file);
+    return await createImageBitmap(file, { imageOrientation: "from-image" }); // honour the EXIF rotation of phone photos
   } catch (_) {
     // Fallback (e.g. SVG): decode through an <img>.
     const url = URL.createObjectURL(file);
@@ -331,7 +332,10 @@ const resizeTool = {
     const lock = checkbox("Keep aspect ratio", true);
     const noEnlarge = checkbox("Don't enlarge smaller images", true);
     const fq = formatQualityRow();
-    const pixelsRow = el("div", { class: "row" }, [field("Width (px)", width), field("Height (px)", height), lock.label]);
+    const preset = select([["", "Custom"], ["3840", "4K · 3840 px wide"], ["1920", "Full HD · 1920 px wide"], ["1280", "HD · 1280 px wide"], ["1080", "Instagram · 1080 px wide"], ["800", "Web · 800 px wide"], ["256", "Thumbnail · 256 px wide"]], "");
+    preset.addEventListener("change", () => { if (preset.value) { width.value = preset.value; height.value = ""; lock.input.checked = true; } });
+    width.addEventListener("input", () => { preset.value = ""; });
+    const pixelsRow = el("div", { class: "row" }, [field("Preset", preset), field("Width (px)", width), field("Height (px)", height), lock.label]);
     const percentRow = el("div", { class: "row", hidden: true }, [field("Scale (%)", percent)]);
     mode.addEventListener("change", () => { pixelsRow.hidden = mode.value !== "pixels"; percentRow.hidden = mode.value !== "percent"; });
     const info = el("div", { class: "stat" });
@@ -429,16 +433,18 @@ const compressTool = {
     const qLabel = el("span", { class: "stat", text: "75" });
     quality.addEventListener("input", () => { qLabel.textContent = quality.value; });
     const maxDim = number("", { min: 1, placeholder: "no limit" });
+    const target = number("", { min: 1, placeholder: "no target" });
     const format = select([["auto", "Auto (JPEG→JPEG, WebP→WebP, PNG→WebP)"], ["jpeg", "JPEG"], ["webp", "WebP"], ["png", "PNG (lossless, only resizes)"]], "auto");
     root.append(
       el("div", { class: "row" }, [
         field("Quality", el("div", { class: "row" }, [quality, qLabel]), "75 is a good balance; 60 is noticeably smaller"),
+        field("Target size (KB)", target, "Lowers the quality until the file fits, e.g. 200 for an e-mail attachment"),
         field("Max width/height (px)", maxDim, "Longest side is limited to this"),
         field("Output format", format),
       ]),
       el("div", { class: "stat", text: `${files.length} file${files.length === 1 ? "" : "s"}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
     );
-    this.opts = { quality, maxDim, format };
+    this.opts = { quality, maxDim, target, format };
   },
   async run(files) {
     const o = this.opts;
@@ -450,7 +456,24 @@ const compressTool = {
       const limit = Number(o.maxDim.value) || 0;
       let w = d.w, h = d.h;
       if (limit && Math.max(w, h) > limit) { const k = limit / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
-      const r = await processImage(file, { width: w, height: h, format: fmt, quality: Number(o.quality.value) });
+      let r = await processImage(file, { width: w, height: h, format: fmt, quality: Number(o.quality.value) });
+      const targetBytes = Number(o.target.value) * 1024;
+      if (targetBytes > 0 && fmt !== "png" && r.blob.size > targetBytes) {
+        // binary search the quality, then shrink the image if even the lowest quality is too big
+        let lo = 5, hi = Number(o.quality.value) - 1, best = null;
+        while (lo <= hi) {
+          const q = Math.floor((lo + hi) / 2);
+          const t = await processImage(file, { width: w, height: h, format: fmt, quality: q });
+          if (t.blob.size <= targetBytes) { best = t; lo = q + 1; } else hi = q - 1;
+        }
+        while (!best && Math.max(w, h) > 64) {
+          w = Math.round(w * 0.8); h = Math.round(h * 0.8);
+          const t = await processImage(file, { width: w, height: h, format: fmt, quality: 50 });
+          if (t.blob.size <= targetBytes) best = t;
+        }
+        if (!best) throw new Error(`${file.name}: cannot get below ${formatBytes(targetBytes)}`);
+        r = best;
+      }
       const saved = 1 - r.blob.size / file.size;
       out.push({
         name: outName(file, r.mime, "compressed"), blob: r.blob,
@@ -690,4 +713,4 @@ const heicTool = {
   },
 };
 
-export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, watermarkTool, faviconTool];
+export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, watermarkTool, metadataTool, faviconTool];
