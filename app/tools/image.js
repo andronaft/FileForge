@@ -617,6 +617,10 @@ const faviconTool = {
 // ---------- HEIC ----------
 // heic2any (libheif) needs eval, which extension pages forbid, so it runs inside a sandboxed iframe.
 
+// Firefox has no sandboxed extension pages, so the Firefox package ships without the decoder.
+const HEIC_UNAVAILABLE = location.protocol === "moz-extension:";
+const WEB_APP = "https://andronaft.github.io/FileForge/app/";
+
 let heicFrame = null;
 let heicSeq = 0;
 const heicPending = new Map();
@@ -658,12 +662,20 @@ const heicTool = {
   hint: "HEIC or HEIF files from an iPhone or iPad — multiple files allowed",
   runLabel: "Convert",
   renderOptions(root) {
+    if (HEIC_UNAVAILABLE) {
+      root.append(el("p", { class: "field-hint" }, [
+        "HEIC decoding needs a sandboxed page, which Firefox extensions do not have. Use the web version: ",
+        el("a", { href: WEB_APP + "#heic", target: "_blank", rel: "noopener" }, WEB_APP),
+      ]));
+      return;
+    }
     const fq = formatQualityRow("jpeg");
     root.append(fq.row);
     this.fq = fq;
     heicSandbox().catch(() => {});
   },
   async run(files) {
+    if (HEIC_UNAVAILABLE) throw new Error("HEIC is unavailable in the Firefox extension; use the web version at " + WEB_APP);
     const fmt = this.fq.format === "keep" ? "jpeg" : this.fq.format;
     const mime = MIME[fmt];
     const out = [];

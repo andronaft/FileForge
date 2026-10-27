@@ -88,6 +88,18 @@ No build step, no framework, no dependencies to install.
 - HEIC conversion needs the sandboxed page, which Firefox extensions do not support; the web version works everywhere.
 - DOCX ⇄ PDF is not implemented (needs a server-side converter).
 
+## Web version
+
+<https://andronaft.github.io/FileForge/> is the same app without the extension parts, deployed from `main`
+by the [pages workflow](.github/workflows/pages.yml). The privacy policy the stores link to is
+<https://andronaft.github.io/FileForge/privacy.html>.
+
+## Publishing
+
+See [docs/PUBLISHING.md](docs/PUBLISHING.md): a `vX.Y.Z` tag (or **Actions → release → Run workflow**)
+builds both zips, creates a GitHub Release and submits them to the Chrome Web Store and addons.mozilla.org.
+Store listing text: [docs/store-listing.md](docs/store-listing.md).
+
 ## Privacy
 
 See [PRIVACY.md](PRIVACY.md). Short version: no uploads, no accounts, no analytics.
