@@ -96,6 +96,7 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 ## Permission justifications
 
 - **contextMenus**: the "Edit image in FileForge" entry in the right-click menu of images and "Open PDF in FileForge" on PDF links and pages.
+- **scripting**: only used when "Edit image in FileForge" is chosen on an image that exists solely inside the page (a `blob:` URL, e.g. an image editor's canvas or a pasted screenshot). A one-line script runs in that tab, after the user granted that site, to read that one image's bytes. No content scripts are registered and nothing runs on pages the user did not pick.
 - **Optional host permissions (`<all_urls>`)**: requested for a single site, only when the user chooses one of those menu items there, so the extension can fetch that image or PDF. Never requested up front.
 - **Sandbox page** (`app/heic-sandbox.html`): runs the HEIC decoder (heic2any / libheif), which needs `new Function`; it is isolated from the extension's privileges and only exchanges image bytes with the app page.
 

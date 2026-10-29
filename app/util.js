@@ -24,6 +24,25 @@ export function formatBytes(n) {
   return `${n < 10 && i > 0 ? n.toFixed(2) : n < 100 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
+/** "1 page", "3 pages"; pass the plural form when it is not just +s. */
+export function plural(n, word, words) {
+  return `${n} ${n === 1 ? word : words || word + "s"}`;
+}
+
+const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", jfif: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", bmp: "image/bmp", svg: "image/svg+xml", avif: "image/avif", ico: "image/x-icon", tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", heif: "image/heif", pdf: "application/pdf", md: "text/markdown", markdown: "text/markdown", txt: "text/plain", csv: "text/csv", tsv: "text/tab-separated-values", json: "application/json", html: "text/html" };
+
+/** MIME type guessed from the file name; files dragged from some apps and network shares arrive with an empty type. */
+export function guessType(name) {
+  const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
+  return TYPES[ext] || "";
+}
+
+/** The file itself, or a copy with the type filled in from its extension when the browser left it empty. */
+export function withType(file) {
+  if (file.type || !guessType(file.name)) return file;
+  return new File([file], file.name, { type: guessType(file.name), lastModified: file.lastModified });
+}
+
 export function baseName(name) {
   const i = name.lastIndexOf(".");
   return i > 0 ? name.slice(0, i) : name;
@@ -81,7 +100,7 @@ export function parseRanges(text, total) {
     let a = Number(m[1]);
     let b = m[2] ? Number(m[2]) : a;
     if (a > b) [a, b] = [b, a];
-    if (a < 1 || b > total) throw new Error(`Page ${a > total ? a : b} is out of range (document has ${total} page${total === 1 ? "" : "s"})`);
+    if (a < 1 || b > total) throw new Error(`Page ${a > total ? a : b} is out of range (document has ${plural(total, "page")})`);
     for (let p = a; p <= b; p++) out.add(p - 1);
   }
   return [...out].sort((x, y) => x - y);

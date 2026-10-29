@@ -1,5 +1,5 @@
 // Remove metadata (EXIF, GPS, XMP, IPTC, comments) from JPEG, PNG and WebP without re-encoding the pixels.
-import { el, formatBytes, baseName } from "../util.js";
+import { el, formatBytes, baseName, plural } from "../util.js";
 
 const u16 = (b, i) => (b[i] << 8) | b[i + 1];
 const u32le = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
@@ -94,7 +94,7 @@ export const metadataTool = {
   hint: "JPG, PNG, WebP — multiple files allowed",
   runLabel: "Remove metadata",
   renderOptions(root, files) {
-    root.append(el("div", { class: "stat", text: `${files.length} file${files.length === 1 ? "" : "s"}. Colour profiles are kept so the colours stay the same.` }));
+    root.append(el("div", { class: "stat", text: `${plural(files.length, "file")}. Colour profiles are kept so the colours stay the same.` }));
   },
   async run(files) {
     const out = [];

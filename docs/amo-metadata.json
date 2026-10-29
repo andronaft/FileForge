@@ -20,6 +20,6 @@
   },
   "version": {
     "license": "MIT",
-    "approval_notes": "The add-on is plain JavaScript (ES modules) with no build step; the uploaded files are the sources, also at https://github.com/andronaft/FileForge. The Firefox package is produced by scripts/package.py, which only rewrites manifest.json.\n\nvendor/ contains unmodified official builds of pdf-lib 1.17.1, pdf.js 4.10.38, marked 12.0.2 and JSZip 3.10.1. No remote code is loaded and the add-on makes no network requests."
+    "approval_notes": "The add-on is plain JavaScript (ES modules) with no build step; the uploaded files are the sources, also at https://github.com/andronaft/FileForge. The Firefox package is produced by scripts/package.py, which only rewrites manifest.json.\n\nvendor/ contains unmodified official builds of pdf-lib 1.17.1, @pdf-lib/fontkit 1.1.1, pdf.js 4.10.38, marked 12.0.2 and JSZip 3.10.1, plus vendor/fonts/: Noto Sans Regular and Bold (SIL OFL 1.1) subset to Latin, Greek and Cyrillic with fonttools, used only to draw non-Latin watermark and page-number text into PDFs. The scripting permission is used solely to read a blob: image from the tab on which the user chose the context-menu item, after the site permission was granted. No remote code is loaded and the add-on makes no network requests."
   }
 }

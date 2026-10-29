@@ -1,4 +1,4 @@
-import { el, baseName, field, select, number, checkbox, parseRanges, formatBytes, toast } from "../util.js";
+import { el, baseName, field, select, number, checkbox, parseRanges, formatBytes, plural, toast } from "../util.js";
 import * as pdfjsLib from "../../vendor/pdf.min.mjs";
 
 const { PDFDocument, degrees, PageSizes, StandardFonts, rgb } = PDFLib;
@@ -50,6 +50,35 @@ function pdfBlob(bytes) {
   return new Blob([bytes], { type: "application/pdf" });
 }
 
+// ---------- fonts ----------
+// The 14 standard PDF fonts only cover WinAnsi (Latin-1 plus a few symbols). Anything else (Cyrillic, Greek,
+// extended Latin) is drawn with a bundled Noto Sans subset through fontkit, both loaded only when first needed.
+
+const WINANSI = /^[\x20-\x7e\xa0-\xff\u20ac\u201a\u0192\u201e\u2026\u2020\u2021\u02c6\u2030\u0160\u2039\u0152\u017d\u2018\u2019\u201c\u201d\u2022\u2013\u2014\u02dc\u2122\u0161\u203a\u0153\u017e\u0178]*$/;
+let fontkitLoading = null;
+const fontCache = {};
+
+function loadFontkit() {
+  if (globalThis.fontkit) return Promise.resolve(globalThis.fontkit);
+  fontkitLoading ??= new Promise((resolve, reject) => {
+    const s = el("script", { src: new URL("../../vendor/fontkit.umd.min.js", import.meta.url).href });
+    s.onload = () => resolve(globalThis.fontkit);
+    s.onerror = () => reject(new Error("Could not load the font engine for non-Latin text"));
+    document.head.append(s);
+  });
+  return fontkitLoading;
+}
+
+/** A font that can draw `text`: Helvetica for WinAnsi text, otherwise an embedded Noto Sans subset. */
+async function fontFor(doc, text, bold) {
+  if (WINANSI.test(text)) return doc.embedFont(bold ? StandardFonts.HelveticaBold : StandardFonts.Helvetica);
+  const fontkit = await loadFontkit();
+  const name = bold ? "NotoSans-Bold" : "NotoSans-Regular";
+  fontCache[name] ??= await (await fetch(new URL(`../../vendor/fonts/${name}.ttf`, import.meta.url))).arrayBuffer();
+  doc.registerFontkit(fontkit);
+  return doc.embedFont(fontCache[name], { subset: true });
+}
+
 // ---------- merge ----------
 
 const mergeTool = {
@@ -64,7 +93,7 @@ const mergeTool = {
     const info = el("div", { class: "stat", text: "Counting pages…" });
     root.append(info);
     Promise.all(files.map(pageCount))
-      .then((counts) => { info.textContent = `${files.length} file${files.length === 1 ? "" : "s"}, ${counts.reduce((a, b) => a + b, 0)} pages in total`; })
+      .then((counts) => { info.textContent = `${plural(files.length, "file")}, ${plural(counts.reduce((a, b) => a + b, 0), "page")} in total`; })
       .catch((err) => { info.textContent = err.message; });
   },
   async run(files) {
@@ -75,7 +104,7 @@ const mergeTool = {
       const pages = await out.copyPages(src, src.getPageIndices());
       pages.forEach((p) => out.addPage(p));
     }
-    return [{ name: "merged.pdf", blob: pdfBlob(await out.save()), note: `${out.getPageCount()} pages` }];
+    return [{ name: "merged.pdf", blob: pdfBlob(await out.save()), note: plural(out.getPageCount(), "page") }];
   },
 };
 
@@ -98,7 +127,7 @@ const splitTool = {
     mode.addEventListener("change", () => { rangesRow.hidden = mode.value !== "ranges"; chunkRow.hidden = mode.value !== "chunks"; });
     const info = el("div", { class: "stat", text: "Counting pages…" });
     root.append(el("div", { class: "row" }, [field("Mode", mode)]), rangesRow, chunkRow, info);
-    pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${n} page${n === 1 ? "" : "s"}`; this.total = n; }).catch((err) => { info.textContent = err.message; });
+    pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; this.total = n; }).catch((err) => { info.textContent = err.message; });
     this.opts = { mode, ranges, chunk };
   },
   async run(files) {
@@ -111,7 +140,7 @@ const splitTool = {
       const doc = await PDFDocument.create();
       const pages = await doc.copyPages(src, indices);
       pages.forEach((p) => doc.addPage(p));
-      return { name, blob: pdfBlob(await doc.save()), note: `${indices.length} page${indices.length === 1 ? "" : "s"}` };
+      return { name, blob: pdfBlob(await doc.save()), note: plural(indices.length, "page") };
     };
     if (o.mode.value === "ranges") {
       const indices = parseRanges(o.ranges.value, total);
@@ -172,14 +201,42 @@ const rotatePdfTool = {
 
 // ---------- images to pdf ----------
 
-async function toPngBytes(file) {
-  const bitmap = await createImageBitmap(file);
+async function reencode(file, mime, quality) {
+  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" }); // apply the EXIF rotation of phone photos
   const c = document.createElement("canvas");
   c.width = bitmap.width; c.height = bitmap.height;
-  c.getContext("2d").drawImage(bitmap, 0, 0);
+  const ctx = c.getContext("2d");
+  if (mime === "image/jpeg") { ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height); }
+  ctx.drawImage(bitmap, 0, 0);
   bitmap.close();
-  const blob = await new Promise((res) => c.toBlob(res, "image/png"));
+  const blob = await new Promise((res) => c.toBlob(res, mime, quality));
   return new Uint8Array(await blob.arrayBuffer());
+}
+
+/** EXIF Orientation (1-8) of a JPEG, or 1 when there is none. */
+function jpegOrientation(b) {
+  if (b[0] !== 0xff || b[1] !== 0xd8) return 1;
+  let i = 2;
+  while (i + 4 <= b.length && b[i] === 0xff) {
+    const marker = b[i + 1];
+    if (marker === 0xda) break;
+    const len = (b[i + 2] << 8) | b[i + 3];
+    if (marker === 0xe1 && b[i + 4] === 0x45 && b[i + 5] === 0x78) { // "Ex" of Exif
+      const t = i + 10; // TIFF header
+      const le = b[t] === 0x49;
+      const r16 = (k) => (le ? b[k] | (b[k + 1] << 8) : (b[k] << 8) | b[k + 1]);
+      const r32 = (k) => (le ? (b[k] | (b[k + 1] << 8) | (b[k + 2] << 16) | (b[k + 3] << 24)) >>> 0 : ((b[k] << 24) | (b[k + 1] << 16) | (b[k + 2] << 8) | b[k + 3]) >>> 0);
+      const ifd = t + r32(t + 4);
+      const n = r16(ifd);
+      for (let k = 0; k < n; k++) {
+        const e = ifd + 2 + k * 12;
+        if (r16(e) === 0x0112) return r16(e + 8) || 1;
+      }
+      return 1;
+    }
+    i += 2 + len;
+  }
+  return 1;
 }
 
 const imagesToPdfTool = {
@@ -195,22 +252,28 @@ const imagesToPdfTool = {
     const margin = number(20, { min: 0, max: 200 });
     const marginField = field("Margin (pt)", margin);
     marginField.hidden = true;
-    size.addEventListener("change", () => { marginField.hidden = size.value === "fit"; });
-    root.append(el("div", { class: "row" }, [field("Page size", size), marginField]));
-    this.opts = { size, margin };
+    const dpi = select([["72", "72 dpi (1 px = 1 pt, huge pages)"], ["96", "96 dpi (screen)"], ["150", "150 dpi"], ["300", "300 dpi (print)"]], "150");
+    const dpiField = field("Image resolution", dpi, "Sets the page size: a 3000 px wide photo is 20 in at 150 dpi");
+    size.addEventListener("change", () => { marginField.hidden = size.value === "fit"; dpiField.hidden = size.value !== "fit"; });
+    root.append(el("div", { class: "row" }, [field("Page size", size), dpiField, marginField]));
+    this.opts = { size, margin, dpi };
   },
   async run(files) {
     const o = this.opts;
     const doc = await PDFDocument.create();
     for (const file of files) {
       let image;
-      if (file.type === "image/jpeg") image = await doc.embedJpg(await file.arrayBuffer());
-      else if (file.type === "image/png") image = await doc.embedPng(await file.arrayBuffer());
-      else image = await doc.embedPng(await toPngBytes(file));
+      if (file.type === "image/jpeg") {
+        const bytes = await file.arrayBuffer();
+        // pdf-lib embeds the raw JPEG, so a rotated phone photo has to be re-encoded upright first.
+        image = await doc.embedJpg(jpegOrientation(new Uint8Array(bytes)) === 1 ? bytes : await reencode(file, "image/jpeg", 0.92));
+      } else if (file.type === "image/png") image = await doc.embedPng(await file.arrayBuffer());
+      else image = await doc.embedPng(await reencode(file, "image/png"));
       const { width: iw, height: ih } = image;
       if (o.size.value === "fit") {
-        const page = doc.addPage([iw, ih]);
-        page.drawImage(image, { x: 0, y: 0, width: iw, height: ih });
+        const k = 72 / (Number(o.dpi.value) || 150);
+        const page = doc.addPage([iw * k, ih * k]);
+        page.drawImage(image, { x: 0, y: 0, width: iw * k, height: ih * k });
         continue;
       }
       const base = o.size.value.startsWith("a4") ? PageSizes.A4 : PageSizes.Letter;
@@ -222,7 +285,7 @@ const imagesToPdfTool = {
       const page = doc.addPage([pw, ph]);
       page.drawImage(image, { x: (pw - w) / 2, y: (ph - h) / 2, width: w, height: h });
     }
-    return [{ name: files.length === 1 ? `${baseName(files[0].name)}.pdf` : "images.pdf", blob: pdfBlob(await doc.save()), note: `${files.length} page${files.length === 1 ? "" : "s"}` }];
+    return [{ name: files.length === 1 ? `${baseName(files[0].name)}.pdf` : "images.pdf", blob: pdfBlob(await doc.save()), note: plural(files.length, "page") }];
   },
 };
 
@@ -245,7 +308,7 @@ const pdfToImagesTool = {
     which.addEventListener("change", () => { rangesField.hidden = which.value !== "ranges"; });
     const info = el("div", { class: "stat", text: "Counting pages…" });
     root.append(el("div", { class: "row" }, [field("Format", format), field("Resolution", dpi), field("Apply to", which), rangesField]), info);
-    pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${n} page${n === 1 ? "" : "s"}`; }).catch((err) => { info.textContent = err.message; });
+    pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; }).catch((err) => { info.textContent = err.message; });
     this.opts = { format, dpi, which, ranges };
   },
   async run(files) {
@@ -280,7 +343,7 @@ const compressPdfTool = {
     const gray = checkbox("Convert to grayscale", false);
     root.append(
       el("div", { class: "row" }, [field("Resolution", dpi), field("JPEG quality", el("div", { class: "row" }, [quality, qLabel])), gray.label]),
-      el("div", { class: "stat", text: `${files.length} file${files.length === 1 ? "" : "s"}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
+      el("div", { class: "stat", text: `${plural(files.length, "file")}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
     );
     this.opts = { dpi, quality, gray };
   },
@@ -302,8 +365,12 @@ const compressPdfTool = {
         page.drawImage(jpg, { x: 0, y: 0, width: wPt, height: hPt });
       });
       const blob = pdfBlob(await doc.save());
-      const saved = 1 - blob.size / file.size;
-      out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: saved > 0 ? `−${Math.round(saved * 100)}% (was ${formatBytes(file.size)})` : `no gain (was ${formatBytes(file.size)})` });
+      if (blob.size >= file.size) {
+        // Text and vector PDFs are already compact; rasterising them only makes them bigger (and the text unselectable).
+        out.push({ name: file.name, blob: file, note: `kept as is: re-rendering would make it ${(blob.size / file.size).toFixed(1)}× bigger` });
+        continue;
+      }
+      out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)})` });
     }
     return out;
   },
@@ -323,7 +390,7 @@ const deletePagesTool = {
     const ranges = el("input", { type: "text", placeholder: "2, 5-7" });
     const info = el("div", { class: "stat", text: "Counting pages…" });
     root.append(el("div", { class: "row" }, [field("Pages to delete", ranges)]), info);
-    pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${n} page${n === 1 ? "" : "s"}`; }).catch((err) => { info.textContent = err.message; });
+    pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; }).catch((err) => { info.textContent = err.message; });
     this.opts = { ranges };
   },
   async run(files) {
@@ -359,7 +426,7 @@ const pageNumbersTool = {
     const out = [];
     for (const file of files) {
       const doc = await loadPdf(file);
-      const font = await doc.embedFont(StandardFonts.Helvetica);
+      const font = await fontFor(doc, o.format.value, false);
       const pages = doc.getPages();
       const sz = Number(o.size.value) || 11, m = Number(o.margin.value) || 28, startAt = Number(o.start.value) || 0;
       const [vert, horiz] = o.position.value.split("-");
@@ -371,7 +438,7 @@ const pageNumbersTool = {
         const y = vert === "top" ? height - m : m;
         page.drawText(label, { x, y, size: sz, font, color: rgb(0.2, 0.2, 0.2) });
       });
-      out.push({ name: `${baseName(file.name)}-numbered.pdf`, blob: pdfBlob(await doc.save()), note: `${pages.length} pages` });
+      out.push({ name: `${baseName(file.name)}-numbered.pdf`, blob: pdfBlob(await doc.save()), note: plural(pages.length, "page") });
     }
     return out;
   },
@@ -406,7 +473,7 @@ const watermarkPdfTool = {
     const out = [];
     for (const file of files) {
       const doc = await loadPdf(file);
-      const font = await doc.embedFont(StandardFonts.HelveticaBold);
+      const font = await fontFor(doc, label, true);
       const sz = Number(o.size.value) || 60;
       const theta = (Number(o.angle.value) * Math.PI) / 180;
       const tw = font.widthOfTextAtSize(label, sz), th = sz * 0.72;
@@ -417,7 +484,7 @@ const watermarkPdfTool = {
         const y = height / 2 - ((tw / 2) * Math.sin(theta) + (th / 2) * Math.cos(theta));
         page.drawText(label, { x, y, size: sz, font, color, opacity: Number(o.opacity.value) / 100, rotate: degrees(Number(o.angle.value)) });
       }
-      out.push({ name: `${baseName(file.name)}-watermarked.pdf`, blob: pdfBlob(await doc.save()), note: `${doc.getPageCount()} pages` });
+      out.push({ name: `${baseName(file.name)}-watermarked.pdf`, blob: pdfBlob(await doc.save()), note: plural(doc.getPageCount(), "page") });
     }
     return out;
   },

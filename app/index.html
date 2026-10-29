@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="script-src 'self'; object-src 'none'; base-uri 'none'">
   <title>FileForge</title>
   <meta name="description" content="Crop, resize, compress and convert images (incl. HEIC), merge and split PDFs, Markdown to PDF, CSV/JSON tools. Everything runs on your device, nothing is uploaded.">
   <meta name="theme-color" content="#1e222c">
@@ -16,6 +17,7 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <a class="skip-link" href="#main">Skip to the tool</a>
   <header class="topbar">
     <a class="brand" href="#"><img src="../icons/icon32.png" alt="" width="24" height="24"><span>FileForge</span></a>
     <span class="tagline">Images · PDF · Markdown — everything runs on your device, nothing is uploaded</span>
@@ -24,7 +26,7 @@
     <nav class="sidebar" id="nav" aria-label="Tools"></nav>
     <main class="main" id="main"></main>
   </div>
-  <div id="toast" class="toast" hidden></div>
+  <div id="toast" class="toast" role="status" aria-live="assertive" hidden></div>
   <script src="../vendor/jszip.min.js"></script>
   <script src="../vendor/pdf-lib.min.js"></script>
   <script src="../vendor/marked.min.js"></script>

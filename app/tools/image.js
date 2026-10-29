@@ -1,9 +1,27 @@
 import { metadataTool } from "./metadata.js";
-import { el, baseName, field, select, number, checkbox, formatBytes, toast } from "../util.js";
+import { el, baseName, field, select, number, checkbox, formatBytes, plural, toast } from "../util.js";
 
 // ---------- image engine ----------
 
+/** SVG files without width/height would decode at the browser's 300 × 150 default; give them a real size from the viewBox. */
+async function sizedSvg(file) {
+  const text = await file.text();
+  const open = text.match(/<svg\b[^>]*>/i);
+  if (!open) return file;
+  const attrs = open[0];
+  const has = (name) => new RegExp(`\\s${name}\\s*=\\s*["'][^"']*\\d`, "i").test(attrs);
+  if (has("width") && has("height")) return file;
+  const vb = attrs.match(/viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  if (!vb) return file;
+  const k = SVG_LONG_SIDE / Math.max(Number(vb[1]), Number(vb[2]));
+  const w = Math.round(Number(vb[1]) * k), h = Math.round(Number(vb[2]) * k);
+  const fixed = text.replace(open[0], attrs.replace(/\s(width|height)\s*=\s*["'][^"']*["']/gi, "").replace(/<svg\b/i, `<svg width="${w}" height="${h}"`));
+  return new File([fixed], file.name, { type: "image/svg+xml" });
+}
+const SVG_LONG_SIDE = 1024;
+
 async function loadImage(file) {
+  if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) file = await sizedSvg(file);
   try {
     return await createImageBitmap(file, { imageOrientation: "from-image" }); // honour the EXIF rotation of phone photos
   } catch (_) {
@@ -442,7 +460,7 @@ const compressTool = {
         field("Max width/height (px)", maxDim, "Longest side is limited to this"),
         field("Output format", format),
       ]),
-      el("div", { class: "stat", text: `${files.length} file${files.length === 1 ? "" : "s"}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
+      el("div", { class: "stat", text: `${plural(files.length, "file")}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
     );
     this.opts = { quality, maxDim, target, format };
   },
@@ -452,32 +470,42 @@ const compressTool = {
     for (const file of files) {
       let fmt = o.format.value;
       if (fmt === "auto") fmt = file.type === "image/jpeg" ? "jpeg" : file.type === "image/webp" ? "webp" : "webp";
-      const d = await sizeOf(file);
+      const mime = MIME[fmt];
+      const img = await loadImage(file);
+      const d = dims(img);
       const limit = Number(o.maxDim.value) || 0;
       let w = d.w, h = d.h;
       if (limit && Math.max(w, h) > limit) { const k = limit / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
-      let r = await processImage(file, { width: w, height: h, format: fmt, quality: Number(o.quality.value) });
+      // Decode and resize once; the quality search below only re-encodes the same canvas.
+      let canvas = resizeStage(img, w, h);
+      let blob = await encode(canvas, mime, Number(o.quality.value) / 100);
       const targetBytes = Number(o.target.value) * 1024;
-      if (targetBytes > 0 && fmt !== "png" && r.blob.size > targetBytes) {
+      if (targetBytes > 0 && fmt !== "png" && blob.size > targetBytes) {
         // binary search the quality, then shrink the image if even the lowest quality is too big
         let lo = 5, hi = Number(o.quality.value) - 1, best = null;
         while (lo <= hi) {
           const q = Math.floor((lo + hi) / 2);
-          const t = await processImage(file, { width: w, height: h, format: fmt, quality: q });
-          if (t.blob.size <= targetBytes) { best = t; lo = q + 1; } else hi = q - 1;
+          const t = await encode(canvas, mime, q / 100);
+          if (t.size <= targetBytes) { best = t; lo = q + 1; } else hi = q - 1;
         }
         while (!best && Math.max(w, h) > 64) {
           w = Math.round(w * 0.8); h = Math.round(h * 0.8);
-          const t = await processImage(file, { width: w, height: h, format: fmt, quality: 50 });
-          if (t.blob.size <= targetBytes) best = t;
+          canvas = resizeStage(canvas, w, h);
+          const t = await encode(canvas, mime, 0.5);
+          if (t.size <= targetBytes) best = t;
         }
         if (!best) throw new Error(`${file.name}: cannot get below ${formatBytes(targetBytes)}`);
-        r = best;
+        blob = best;
       }
-      const saved = 1 - r.blob.size / file.size;
+      if (img.close) img.close();
+      if (blob.size >= file.size) {
+        // Re-encoding cannot beat the original: hand it back untouched instead of a bigger "compressed" file.
+        out.push({ name: file.name, blob: file, note: `already as small as it gets (re-encoding gave ${formatBytes(blob.size)})` });
+        continue;
+      }
       out.push({
-        name: outName(file, r.mime, "compressed"), blob: r.blob,
-        note: saved > 0 ? `−${Math.round(saved * 100)}% (was ${formatBytes(file.size)})` : `no gain (was ${formatBytes(file.size)})`,
+        name: outName(file, mime, "compressed"), blob,
+        note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)})`,
       });
     }
     return out;

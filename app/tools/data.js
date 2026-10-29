@@ -1,4 +1,4 @@
-import { el, baseName, field, select, number, checkbox, download, readAsText } from "../util.js";
+import { el, baseName, field, select, number, checkbox, download, readAsText, plural } from "../util.js";
 
 // ---------- CSV helpers (RFC 4180) ----------
 
@@ -45,7 +45,8 @@ export function toCsv(rows, delimiter = ",") {
 
 function coerce(v) {
   if (v === "") return "";
-  if (/^-?\d+(\.\d+)?$/.test(v) && v.length < 16) return Number(v);
+  // Only canonical numbers: "01234" (postcodes), "0501234567" (phones) and "1.50" stay strings.
+  if (/^-?\d+(\.\d+)?$/.test(v) && v.length < 16 && String(Number(v)) === v) return Number(v);
   if (v === "true") return true;
   if (v === "false") return false;
   return v;
@@ -99,7 +100,7 @@ const csvJsonTool = {
       try { data = JSON.parse(text); } catch (err) { throw new Error(`Invalid JSON: ${err.message}`); }
       const csv = toCsv(data, delimiter);
       u.output.value = csv;
-      return [{ name: `${base}.csv`, blob: new Blob([csv], { type: "text/csv" }), note: `${csv.split("\n").length - 1} rows` }];
+      return [{ name: `${base}.csv`, blob: new Blob([csv], { type: "text/csv" }), note: plural(Math.max(0, csv.split("\n").length - 2), "row") }];
     }
     const rows = parseCsv(text, delimiter);
     let data;
@@ -111,11 +112,86 @@ const csvJsonTool = {
     }
     const json = JSON.stringify(data, null, Number(u.indent.value) || 0) + "\n";
     u.output.value = json;
-    return [{ name: `${base}.json`, blob: new Blob([json], { type: "application/json" }), note: `${data.length} records` }];
+    return [{ name: `${base}.json`, blob: new Blob([json], { type: "application/json" }), note: plural(data.length, "record") }];
   },
 };
 
 // ---------- JSON format / validate ----------
+
+/** Where JSON.parse would fail: { pos, message } or null. Browsers no longer put the offset in the error message. */
+export function jsonError(text) {
+  let i = 0;
+  const n = text.length;
+  const ws = () => { while (i < n && " \t\n\r".includes(text[i])) i++; };
+  const fail = (message, at = i) => { throw { pos: Math.min(at, n), message }; };
+  const value = () => {
+    ws();
+    if (i >= n) fail("Unexpected end of input");
+    const c = text[i];
+    if (c === "{") {
+      i++; ws();
+      if (text[i] === "}") { i++; return; }
+      for (;;) {
+        ws();
+        if (text[i] !== '"') fail(text[i] === "}" ? "Trailing comma before }" : "Expected a \"key\" in double quotes");
+        string(); ws();
+        if (text[i] !== ":") fail("Expected : after the key");
+        i++; value(); ws();
+        if (text[i] === ",") { i++; continue; }
+        if (text[i] === "}") { i++; return; }
+        fail(i >= n ? "Unexpected end of input, missing }" : "Expected , or } after a value");
+      }
+    }
+    if (c === "[") {
+      i++; ws();
+      if (text[i] === "]") { i++; return; }
+      for (;;) {
+        ws();
+        if (text[i] === "]") fail("Trailing comma before ]");
+        value(); ws();
+        if (text[i] === ",") { i++; continue; }
+        if (text[i] === "]") { i++; return; }
+        fail(i >= n ? "Unexpected end of input, missing ]" : "Expected , or ] after a value");
+      }
+    }
+    if (c === '"') return string();
+    if (c === "-" || (c >= "0" && c <= "9")) {
+      const m = text.slice(i).match(/^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?/);
+      if (!m || (text[i] === "-" && m[0].length === 1)) fail("Invalid number");
+      i += m[0].length;
+      if (text[i] === "." || (text[i] >= "0" && text[i] <= "9")) fail("Invalid number (leading zeros and trailing dots are not allowed)");
+      return;
+    }
+    for (const word of ["true", "false", "null"]) if (text.startsWith(word, i)) { i += word.length; return; }
+    fail(c === "'" ? "Strings must use double quotes" : `Unexpected character ${JSON.stringify(c)}`);
+  };
+  const string = () => {
+    const start = i;
+    i++;
+    while (i < n) {
+      const c = text[i];
+      if (c === '"') { i++; return; }
+      if (c === "\\") {
+        const e = text[i + 1];
+        if (e === "u") { if (!/^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) fail("Bad \\u escape", i); i += 6; continue; }
+        if (!'"\\/bfnrt'.includes(e || "")) fail(`Bad escape \\${e ?? ""}`, i);
+        i += 2; continue;
+      }
+      if (c === "\n") fail("Line break inside a string (missing closing quote?)", i);
+      if (c < " ") fail("Control character inside a string", i);
+      i++;
+    }
+    fail("Unterminated string", start);
+  };
+  try {
+    value(); ws();
+    if (i < n) fail(text[i] === "," ? "Trailing comma after the value" : "Unexpected text after the JSON value");
+    return null;
+  } catch (e) {
+    if (e && typeof e.pos === "number") return e;
+    throw e;
+  }
+}
 
 const jsonFormatTool = {
   id: "json-format",
@@ -144,13 +220,12 @@ const jsonFormatTool = {
     try {
       data = JSON.parse(text);
     } catch (err) {
-      const m = err.message.match(/position (\d+)/);
-      if (m) {
-        const pos = Number(m[1]);
-        const before = text.slice(0, pos);
-        const line = before.split("\n").length, col = pos - before.lastIndexOf("\n");
-        u.status.textContent = `✖ Invalid JSON at line ${line}, column ${col}: ${err.message}`;
-        u.input.focus(); u.input.setSelectionRange(pos, pos + 1);
+      const e = jsonError(text);
+      if (e) {
+        const before = text.slice(0, e.pos);
+        const line = before.split("\n").length, col = e.pos - before.lastIndexOf("\n");
+        u.status.textContent = `✖ Invalid JSON at line ${line}, column ${col}: ${e.message}`;
+        u.input.focus(); u.input.setSelectionRange(e.pos, Math.min(e.pos + 1, text.length));
       } else {
         u.status.textContent = `✖ Invalid JSON: ${err.message}`;
       }

@@ -1,4 +1,4 @@
-import { el, formatBytes, download, zipFiles, toast } from "./util.js";
+import { el, formatBytes, download, zipFiles, toast, withType, guessType, plural } from "./util.js";
 import { imageTools } from "./tools/image.js";
 import { pdfTools } from "./tools/pdf.js";
 import { markdownTools } from "./tools/markdown.js";
@@ -52,7 +52,7 @@ function mount() {
     multiple: tool.multiple !== false, accept: tool.accept || "",
     onchange: () => { addFiles([...fileInput.files]); fileInput.value = ""; },
   });
-  const dropzone = el("section", { class: "dropzone", tabindex: "0" }, [
+  const dropzone = el("section", { class: "dropzone", tabindex: "0", role: "button", "aria-label": tool.multiple === false ? "Choose a file" : "Choose files" }, [
     fileInput,
     el("div", { class: "dz-inner" }, [
       el("strong", { text: tool.multiple === false ? "Drop a file here" : "Drop files here" }),
@@ -77,7 +77,7 @@ function mount() {
     ui.runBtn,
     el("button", { type: "button", text: "Clear", onclick: () => { state.files = []; state.results = []; refresh(); } }),
   ]);
-  ui.results = el("section", { class: "results card", hidden: true });
+  ui.results = el("section", { class: "results card", hidden: true, "aria-live": "polite" });
 
   main.replaceChildren(
     el("section", { class: "tool-head" }, [el("h1", { text: tool.title }), el("p", { text: tool.description })]),
@@ -102,7 +102,7 @@ function accepts(tool, f) {
 
 function addFiles(incoming) {
   const tool = state.tool;
-  const accepted = incoming.filter((f) => {
+  const accepted = incoming.map(withType).filter((f) => {
     const ok = accepts(tool, f);
     if (!ok) toast(`Skipped ${f.name}: not a supported file type for this tool`, "error");
     return ok;
@@ -162,7 +162,7 @@ function renderResults() {
   ui.results.replaceChildren();
   ui.results.hidden = state.results.length === 0;
   if (!state.results.length) return;
-  ui.results.append(el("h2", { text: `Done · ${state.results.length} file${state.results.length === 1 ? "" : "s"}` }));
+  ui.results.append(el("h2", { text: `Done · ${plural(state.results.length, "file")}` }));
   const list = el("ul", { class: "files" });
   for (const r of state.results) {
     list.append(el("li", {}, [
@@ -210,18 +210,27 @@ async function run() {
 }
 
 async function loadFromSrc() {
-  const src = new URLSearchParams(location.search).get("src");
+  const params = new URLSearchParams(location.search);
+  const src = params.get("src");
+  if (params.get("note") === "embedded") toast("That image is embedded in the page and could not be read. Save it and drop it here instead.", "error");
   if (!src) return;
   history.replaceState(null, "", location.pathname + location.hash);
   try {
-    const res = await fetch(src);
+    let url = src, name = "file";
+    if (src.startsWith("handoff:")) {
+      // The extension's background script fetched an embedded (data:/blob:) image and holds it for us.
+      const api = globalThis.browser ?? globalThis.chrome;
+      const got = await api.runtime.sendMessage({ type: "fileforge-pull", id: src.slice(8) });
+      if (!got) throw new Error("nothing pending");
+      url = got.dataUrl; name = got.name || name;
+    } else {
+      name = decodeURIComponent(new URL(src).pathname.split("/").pop() || "file") || "file";
+    }
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();
-    const name = decodeURIComponent(new URL(src).pathname.split("/").pop() || "file") || "file";
-    const ext = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
-    const type = blob.type && blob.type !== "application/octet-stream" ? blob.type
-      : ext === "pdf" ? "application/pdf" : ext === "jpg" ? "image/jpeg" : ext ? `image/${ext}` : "";
-    addFiles([new File([blob], name.includes(".") ? name : `${name}.${type.split("/")[1] || "bin"}`, { type })]);
+    const type = blob.type && blob.type !== "application/octet-stream" ? blob.type : guessType(name);
+    addFiles([new File([blob], name.includes(".") ? name : `${name}.${type.split("/")[1]?.replace("jpeg", "jpg") || "bin"}`, { type })]);
   } catch (err) {
     toast("Could not load that file automatically. Save it and drop it here instead.", "error");
   }

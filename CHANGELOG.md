@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.1
+
+### Fixed
+
+- Watermark PDF and Add page numbers accept Cyrillic, Greek and extended Latin text: a bundled Noto Sans subset
+  is embedded (through fontkit) whenever the text goes beyond what the standard PDF fonts cover. (#1)
+- JSON format & validate reports the line and column of an error again, in every browser; the broken
+  character is selected in the editor. (#2)
+- CSV → JSON keeps leading zeros ("01234", "0501234567") and non-canonical numbers as strings. (#3)
+- Images to PDF rotates phone photos upright (EXIF orientation) and sizes "fit" pages at a chosen resolution
+  (150 dpi by default) instead of 1 px = 1 pt. (#4, #5)
+- Compress image and Compress PDF return the original file, with a note, when re-encoding would only make it
+  bigger. (#6, #7)
+- Files that arrive with an empty MIME type are accepted by their extension. (#8)
+- The Markdown preview is sandboxed and the app page carries a Content-Security-Policy, so HTML inside a
+  Markdown file can no longer run scripts. (#9)
+- SVG files without width/height render at 1024 px on the long side from their viewBox instead of 300 × 150. (#10)
+- Target-size compression decodes the image once and only re-encodes, about 5× faster on large photos. (#11)
+- Toasts are announced to screen readers, the results list is a live region, the dropzone is a labelled button
+  and there is a "Skip to the tool" link. (#12)
+- "Edit image in FileForge" works on data: and blob: images (the extension reads the bytes in the page and
+  hands them to the app; needs the new `scripting` permission). (#13)
+- Plural forms ("1 page", "2 records") and row counts in the result notes. (#14)
+
 ## 0.3.0
 
 ### Added

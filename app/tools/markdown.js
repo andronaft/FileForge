@@ -83,7 +83,8 @@ const mdToPdfTool = {
   renderOptions(root, files) {
     const editor = el("textarea", { spellcheck: "false" });
     editor.value = this.text;
-    const preview = el("iframe", { class: "md-preview", title: "Preview" });
+    // No allow-scripts: HTML inside a Markdown file is rendered but never executed (same-origin is kept so print() works).
+    const preview = el("iframe", { class: "md-preview", title: "Preview", sandbox: "allow-same-origin allow-modals" });
     const theme = select([["github", "GitHub style"], ["serif", "Serif / book"], ["plain", "Plain"]], this.theme || "github");
     const pageSize = select([["A4", "A4"], ["Letter", "Letter"]], this.pageSize || "A4");
     const titleOf = () => (files[0] ? files[0].name.replace(/\.[^.]+$/, "") : (editor.value.match(/^#\s+(.+)$/m)?.[1] || "document"));
