@@ -1,11 +1,24 @@
 # FileForge
 
-Local-first file tools for the browser: crop, resize, rotate, compress and convert images, merge/split/rotate PDFs, and turn Markdown into PDF. Everything runs on your device. Nothing is uploaded anywhere.
+[![Chrome Web Store](https://img.shields.io/chrome-web-store/v/lmnnhcoblacbhagicaambfbbmbpnachn?label=Chrome%20Web%20Store&logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn)
+[![Chrome Web Store users](https://img.shields.io/chrome-web-store/users/lmnnhcoblacbhagicaambfbbmbpnachn?label=users)](https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn)
+[![Firefox Add-ons](https://img.shields.io/amo/v/fileforge-image-pdf-file-tools?label=Firefox%20Add-ons&logo=firefox&logoColor=white)](https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/)
+[![Firefox users](https://img.shields.io/amo/users/fileforge-image-pdf-file-tools?label=users)](https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/)
+[![Release](https://img.shields.io/github/v/release/andronaft/FileForge?label=release)](https://github.com/andronaft/FileForge/releases/latest)
+[![CI](https://github.com/andronaft/FileForge/actions/workflows/ci.yml/badge.svg)](https://github.com/andronaft/FileForge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Works two ways:
+Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 22 tools, everything runs on your device. Nothing is uploaded anywhere.
 
-- as a **Chrome extension** (right-click any image → "Edit image in FileForge"), or
-- as a plain **web app** served from any static host.
+## Install
+
+| | |
+| --- | --- |
+| **Chrome, Edge, Brave, Opera** | [Chrome Web Store](https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn) |
+| **Firefox** | [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/) |
+| **Any browser, no install** | [andronaft.github.io/FileForge](https://andronaft.github.io/FileForge/) — installable as an app, works offline |
+
+After installing: click the toolbar icon or press **Alt+Shift+F**, right-click any image → **Edit image in FileForge**, or right-click a PDF link → **Open PDF in FileForge**.
 
 ![Crop image in FileForge](docs/screenshots/crop.png)
 
@@ -38,10 +51,10 @@ Works two ways:
 
 Multiple results can be downloaded as a single ZIP. Images can also be pasted from the clipboard.
 
-## Install as a Chrome extension (unpacked)
+## Run from source (unpacked)
 
 1. Open `chrome://extensions` and switch on **Developer mode**.
-2. Click **Load unpacked** and choose this folder.
+2. Click **Load unpacked** and choose this folder (for Firefox: `about:debugging` → **Load Temporary Add-on** → `dist/firefox/manifest.json` after `python3 scripts/package.py`).
 3. Click the FileForge icon in the toolbar, or right-click an image on any page and pick **Edit image in FileForge**.
 
 The context menu asks for permission to read images from that site only when you first use it. The extension requests no host permissions up front.
@@ -100,8 +113,9 @@ by the [pages workflow](.github/workflows/pages.yml). The privacy policy the sto
 ## Publishing
 
 See [docs/PUBLISHING.md](docs/PUBLISHING.md): a `vX.Y.Z` tag (or **Actions → release → Run workflow**)
-builds both zips, creates a GitHub Release and submits them to the Chrome Web Store and addons.mozilla.org.
-Store listing text: [docs/store-listing.md](docs/store-listing.md).
+builds both zips, creates a [GitHub Release](https://github.com/andronaft/FileForge/releases) and submits them
+to the [Chrome Web Store](https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn) and [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/).
+Store listing text: [docs/store-listing.md](docs/store-listing.md); changes per version: [CHANGELOG.md](CHANGELOG.md).
 
 ## Privacy
 

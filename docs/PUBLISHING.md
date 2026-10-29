@@ -28,9 +28,20 @@ store's dashboard, then re-run **Actions → publish → Run workflow** with the
 The web version at <https://andronaft.github.io/FileForge/> is deployed by the
 [pages workflow](../.github/workflows/pages.yml) on every push to `main`; nothing to do there.
 
+## Where it is published
+
+| Store | Listing | Identifier |
+| --- | --- | --- |
+| Chrome Web Store | <https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn> | item ID `lmnnhcoblacbhagicaambfbbmbpnachn` (repository variable `CWS_EXTENSION_ID`, already set) |
+| addons.mozilla.org | <https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/> | add-on ID `fileforge@andronaft.github.io`, slug `fileforge-image-pdf-file-tools` |
+| Web | <https://andronaft.github.io/FileForge/> | deployed from `main` by the pages workflow |
+
+Both listings were created by hand with version 0.3.0. From here on the release workflow can update them,
+once the secrets below exist; until then it still creates the GitHub Release and prints a notice per store.
+
 ## One-time setup: Chrome Web Store
 
-The first version has to be created in the dashboard by hand; the API only updates an existing item.
+Done for the first version (see above). Kept for reference: the first version has to be created in the dashboard by hand; the API only updates an existing item.
 
 1. Register as a developer at [chrome.google.com/webstore/devconsole](https://chrome.google.com/webstore/devconsole)
    (one-time $5 fee).
@@ -65,6 +76,8 @@ client of type **Desktop app**, then the command above.
 | `CWS_EXTENSION_ID`  | variable: the item ID (not secret) |
 
 ## One-time setup: addons.mozilla.org (Firefox)
+
+The listing exists (see above); only the API secrets are still needed for automatic updates.
 
 1. Sign in at [addons.mozilla.org/developers](https://addons.mozilla.org/developers/).
 2. The API credentials at [Manage API Keys](https://addons.mozilla.org/developers/addon/api/key/) are per
