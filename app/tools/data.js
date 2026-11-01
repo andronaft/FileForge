@@ -1,4 +1,4 @@
-import { el, baseName, field, select, number, checkbox, download, readAsText, plural } from "../util.js";
+import { el, baseName, field, select, number, checkbox, download, readAsText, plural, toast } from "../util.js";
 
 // ---------- CSV helpers (RFC 4180) ----------
 
@@ -54,10 +54,21 @@ function coerce(v) {
 
 // ---------- shared text-tool layout ----------
 
+export function copyButton(getText, label = "Copy") {
+  return el("button", { type: "button", class: "copy", text: label, onclick: async () => {
+    const text = getText();
+    if (!text) return toast("Nothing to copy yet", "error");
+    try { await navigator.clipboard.writeText(text); toast("Copied to the clipboard"); }
+    catch (err) { toast(`Could not copy: ${err.message}`, "error"); }
+  } });
+}
+
 function textLayout(root, { inputLabel, outputLabel, placeholder }) {
   const input = el("textarea", { placeholder, spellcheck: "false" });
   const output = el("textarea", { readonly: true, spellcheck: "false", placeholder: "Result appears here" });
-  root.append(el("div", { class: "md-grid" }, [field(inputLabel, input), field(outputLabel, output)]));
+  const out = field(outputLabel, output);
+  out.append(copyButton(() => output.value, "Copy output"));
+  root.append(el("div", { class: "md-grid" }, [field(inputLabel, input), out]));
   return { input, output };
 }
 

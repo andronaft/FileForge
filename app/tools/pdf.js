@@ -1,16 +1,19 @@
 import { el, baseName, field, select, number, checkbox, parseRanges, formatBytes, plural, toast } from "../util.js";
 import * as pdfjsLib from "../../vendor/pdf.min.mjs";
+import { copyButton } from "./data.js";
 
-const { PDFDocument, degrees, PageSizes, StandardFonts, rgb } = PDFLib;
+const { PDFDocument, PDFDict, PDFName, degrees, PageSizes, StandardFonts, rgb } = PDFLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("../../vendor/pdf.worker.min.mjs", import.meta.url).href;
 
 /** Render pages of a PDF file with pdf.js. Calls onPage(canvas, pageNumber, widthPt, heightPt). */
-async function renderPages(file, scale, indices, onPage) {
+async function renderPages(file, scale, indices, onPage, progress) {
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
   try {
     const pages = indices || Array.from({ length: doc.numPages }, (_, i) => i);
+    progress?.start(pages.length);
     for (const i of pages) {
+      await progress?.tick(`page ${i + 1}`);
       const page = await doc.getPage(i + 1);
       const base = page.getViewport({ scale: 1 });
       const viewport = page.getViewport({ scale });
@@ -36,7 +39,8 @@ function toBlob(canvas, mime, quality) {
 async function loadPdf(file) {
   const bytes = await file.arrayBuffer();
   try {
-    return await PDFDocument.load(bytes, { ignoreEncryption: true });
+    // updateMetadata: false keeps the file's own Info dictionary; pdf-lib would otherwise stamp its Producer and dates.
+    return await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
   } catch (err) {
     throw new Error(`${file.name} is not a readable PDF (${err.message || err})`);
   }
@@ -96,10 +100,11 @@ const mergeTool = {
       .then((counts) => { info.textContent = `${plural(files.length, "file")}, ${plural(counts.reduce((a, b) => a + b, 0), "page")} in total`; })
       .catch((err) => { info.textContent = err.message; });
   },
-  async run(files) {
+  async run(files, _root, progress) {
     if (files.length < 2) throw new Error("Add at least two PDF files");
     const out = await PDFDocument.create();
     for (const file of files) {
+      await progress?.tick(file.name);
       const src = await loadPdf(file);
       const pages = await out.copyPages(src, src.getPageIndices());
       pages.forEach((p) => out.addPage(p));
@@ -182,10 +187,11 @@ const rotatePdfTool = {
     root.append(el("div", { class: "row" }, [field("Rotation", angle), field("Apply to", which), rangesField]));
     this.opts = { angle, which, ranges };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const doc = await loadPdf(file);
       const total = doc.getPageCount();
       const indices = o.which.value === "all" ? doc.getPageIndices() : parseRanges(o.ranges.value, total);
@@ -258,10 +264,11 @@ const imagesToPdfTool = {
     root.append(el("div", { class: "row" }, [field("Page size", size), dpiField, marginField]));
     this.opts = { size, margin, dpi };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const doc = await PDFDocument.create();
     for (const file of files) {
+      await progress?.tick(file.name);
       let image;
       if (file.type === "image/jpeg") {
         const bytes = await file.arrayBuffer();
@@ -311,7 +318,7 @@ const pdfToImagesTool = {
     pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; }).catch((err) => { info.textContent = err.message; });
     this.opts = { format, dpi, which, ranges };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const file = files[0];
     const total = await pageCount(file);
@@ -321,7 +328,7 @@ const pdfToImagesTool = {
     const out = [];
     await renderPages(file, Number(o.dpi.value) / 72, indices, async (canvas, n) => {
       out.push({ name: `${baseName(file.name)}-${String(n).padStart(pad, "0")}.${o.format.value === "png" ? "png" : "jpg"}`, blob: await toBlob(canvas, mime, 0.9), note: `${canvas.width} × ${canvas.height}` });
-    });
+    }, progress);
     return out;
   },
 };
@@ -331,26 +338,39 @@ const pdfToImagesTool = {
 const compressPdfTool = {
   id: "pdf-compress",
   title: "Compress PDF",
-  description: "Re-renders every page as a JPEG at a lower resolution. Great for scans and photo-heavy PDFs; text becomes non-selectable, so skip it for text documents you still want to search.",
+  description: "Lossless mode compacts the file structure and drops metadata while the text stays selectable. Re-render mode turns every page into a JPEG at a lower resolution: great for scans and photo-heavy PDFs, wrong for text documents.",
   accept: "application/pdf,.pdf",
   hint: "One or more PDF files",
   runLabel: "Compress",
   renderOptions(root, files) {
+    const mode = select([["lossless", "Lossless: compact structure, drop metadata"], ["render", "Re-render pages as JPEG (for scans)"]], "lossless");
     const dpi = select([["72", "72 dpi (smallest)"], ["100", "100 dpi"], ["150", "150 dpi (balanced)"], ["200", "200 dpi"]], "100");
     const quality = el("input", { type: "range", min: 20, max: 95, value: 60 });
     const qLabel = el("span", { class: "stat", text: "60" });
     quality.addEventListener("input", () => { qLabel.textContent = quality.value; });
     const gray = checkbox("Convert to grayscale", false);
+    const renderRow = el("div", { class: "row", hidden: true }, [field("Resolution", dpi), field("JPEG quality", el("div", { class: "row" }, [quality, qLabel])), gray.label]);
+    mode.addEventListener("change", () => { renderRow.hidden = mode.value !== "render"; });
     root.append(
-      el("div", { class: "row" }, [field("Resolution", dpi), field("JPEG quality", el("div", { class: "row" }, [quality, qLabel])), gray.label]),
+      el("div", { class: "row" }, [field("Mode", mode)]),
+      renderRow,
       el("div", { class: "stat", text: `${plural(files.length, "file")}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
     );
-    this.opts = { dpi, quality, gray };
+    this.opts = { mode, dpi, quality, gray };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const out = [];
     for (const file of files) {
+      if (o.mode.value === "lossless") {
+        await progress?.tick(file.name);
+        const doc = await loadPdf(file);
+        stripMetadata(doc);
+        const blob = pdfBlob(await doc.save({ useObjectStreams: true, updateMetadata: false }));
+        if (blob.size >= file.size) out.push({ name: file.name, blob: file, note: "already compact: kept as is" });
+        else out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)}), text kept` });
+        continue;
+      }
       const doc = await PDFDocument.create();
       await renderPages(file, Number(o.dpi.value) / 72, null, async (canvas, _n, wPt, hPt) => {
         if (o.gray.input.checked) {
@@ -363,7 +383,7 @@ const compressPdfTool = {
         const jpg = await doc.embedJpg(await (await toBlob(canvas, "image/jpeg", Number(o.quality.value) / 100)).arrayBuffer());
         const page = doc.addPage([wPt, hPt]);
         page.drawImage(jpg, { x: 0, y: 0, width: wPt, height: hPt });
-      });
+      }, progress);
       const blob = pdfBlob(await doc.save());
       if (blob.size >= file.size) {
         // Text and vector PDFs are already compact; rasterising them only makes them bigger (and the text unselectable).
@@ -421,10 +441,11 @@ const pageNumbersTool = {
     root.append(el("div", { class: "row" }, [field("Position", position), field("Format", format), field("Font size", size), field("Start at", start), field("Margin (pt)", margin)]));
     this.opts = { position, format, size, start, margin };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const doc = await loadPdf(file);
       const font = await fontFor(doc, o.format.value, false);
       const pages = doc.getPages();
@@ -464,7 +485,7 @@ const watermarkPdfTool = {
     root.append(el("div", { class: "row" }, [field("Text", text), field("Font size", size), field("Opacity", el("div", { class: "row" }, [opacity, oLabel])), field("Angle", angle), field("Colour", color)]));
     this.opts = { text, size, opacity, angle, color };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const label = o.text.value.trim();
     if (!label) throw new Error("Enter the watermark text");
@@ -472,6 +493,7 @@ const watermarkPdfTool = {
     const color = rgb(parseInt(hex.slice(1, 3), 16) / 255, parseInt(hex.slice(3, 5), 16) / 255, parseInt(hex.slice(5, 7), 16) / 255);
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const doc = await loadPdf(file);
       const font = await fontFor(doc, label, true);
       const sz = Number(o.size.value) || 60;
@@ -490,4 +512,136 @@ const watermarkPdfTool = {
   },
 };
 
-export const pdfTools = [mergeTool, splitTool, rotatePdfTool, deletePagesTool, pageNumbersTool, watermarkPdfTool, compressPdfTool, imagesToPdfTool, pdfToImagesTool];
+// ---------- metadata ----------
+
+/** Deletes the Info dictionary entries (Title, Author, Producer, dates…) and the XMP stream. Returns what was removed. */
+function stripMetadata(doc) {
+  const removed = [];
+  const ref = doc.context.trailerInfo.Info;
+  const info = ref ? doc.context.lookup(ref) : null;
+  if (info instanceof PDFDict) {
+    for (const key of [...info.keys()]) { removed.push(key.decodeText()); info.delete(key); }
+  }
+  if (doc.catalog.has(PDFName.of("Metadata"))) { doc.catalog.delete(PDFName.of("Metadata")); removed.push("XMP"); }
+  return removed;
+}
+
+function infoRows(doc) {
+  const fmt = (d) => (d instanceof Date && !isNaN(d) ? d.toISOString().slice(0, 16).replace("T", " ") : "");
+  const rows = [
+    ["Title", doc.getTitle()], ["Author", doc.getAuthor()], ["Subject", doc.getSubject()], ["Keywords", doc.getKeywords()],
+    ["Created with", doc.getCreator()], ["Producer", doc.getProducer()],
+    ["Created", fmt(doc.getCreationDate())], ["Modified", fmt(doc.getModificationDate())],
+    ["XMP metadata", doc.catalog.has(PDFName.of("Metadata")) ? "present" : ""],
+  ];
+  return rows.filter(([, v]) => v);
+}
+
+const pdfMetadataTool = {
+  id: "pdf-metadata",
+  title: "Remove PDF metadata",
+  description: "See and strip the document properties a PDF carries: title, author, software, creation and modification dates, keywords and the XMP block. Pages are untouched.",
+  accept: "application/pdf,.pdf",
+  hint: "One or more PDF files",
+  runLabel: "Remove metadata",
+  renderOptions(root, files) {
+    const box = el("div", { class: "stat", text: "Reading…" });
+    root.append(box);
+    (async () => {
+      const blocks = [];
+      for (const file of files.slice(0, 5)) {
+        let rows;
+        try { rows = infoRows(await loadPdf(file)); } catch (err) { rows = [["Error", err.message]]; }
+        const table = el("table", { class: "meta" }, rows.map(([k, v]) => el("tr", {}, [el("th", { text: k }), el("td", { text: v })])));
+        blocks.push(el("div", {}, [el("div", { class: "stat", text: file.name }), rows.length ? table : el("div", { class: "stat", text: "No metadata found." })]));
+      }
+      if (files.length > 5) blocks.push(el("div", { class: "stat", text: `… and ${files.length - 5} more` }));
+      box.replaceWith(el("div", { class: "options" }, blocks));
+    })();
+  },
+  async run(files, _root, progress) {
+    const out = [];
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const doc = await loadPdf(file);
+      const removed = stripMetadata(doc);
+      const blob = pdfBlob(await doc.save({ useObjectStreams: true, updateMetadata: false }));
+      out.push({ name: `${baseName(file.name)}-clean.pdf`, blob, note: removed.length ? `removed ${removed.join(", ")}` : "no metadata found" });
+    }
+    return out;
+  },
+};
+
+// ---------- pdf to text ----------
+
+const pdfToTextTool = {
+  id: "pdf-to-text",
+  title: "PDF to text",
+  description: "Pull the text layer out of a PDF as plain text or Markdown. Scanned PDFs have no text layer; those need OCR, which FileForge does not do.",
+  accept: "application/pdf,.pdf",
+  hint: "One or more PDF files",
+  runLabel: "Extract text",
+  noAutoDownload: true,
+  renderOptions(root) {
+    const format = select([["txt", "Plain text (.txt)"], ["md", "Markdown with a heading per page (.md)"]], "txt");
+    const reflow = checkbox("Join wrapped lines into paragraphs", true);
+    const output = el("textarea", { readonly: true, spellcheck: "false", placeholder: "Text appears here", rows: 14 });
+    const outField = field("Text", output);
+    outField.append(copyButton(() => output.value, "Copy text"));
+    root.append(el("div", { class: "row" }, [field("Format", format), reflow.label]), outField);
+    this.opts = { format, reflow, output };
+  },
+  async run(files, _root, progress) {
+    const o = this.opts;
+    const out = [];
+    let preview = "";
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const data = new Uint8Array(await file.arrayBuffer());
+      const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+      const pages = [];
+      let chars = 0;
+      try {
+        for (let n = 1; n <= doc.numPages; n++) {
+          const page = await doc.getPage(n);
+          const tc = await page.getTextContent();
+          const lines = [];
+          let line = "";
+          for (const item of tc.items) {
+            line += item.str;
+            if (item.hasEOL) { lines.push(line.trimEnd()); line = ""; }
+          }
+          if (line.trim()) lines.push(line.trimEnd());
+          let text;
+          if (o.reflow.input.checked) {
+            // A line ending in sentence punctuation, or one much shorter than the page's typical line, ends a
+            // paragraph; the rest are wrapped lines and get joined.
+            const lengths = lines.map((l) => l.trim().length).filter(Boolean).sort((a, b) => a - b);
+            const median = lengths[Math.floor(lengths.length / 2)] || 0;
+            const paras = [];
+            let cur = "";
+            for (const l of lines) {
+              const t = l.trim();
+              if (!t) { if (cur) paras.push(cur); cur = ""; continue; }
+              cur = cur ? `${cur} ${t}` : t;
+              if (/[.!?:;]["')\]]?$/.test(t) || t.length < median * 0.6) { paras.push(cur); cur = ""; }
+            }
+            if (cur) paras.push(cur);
+            text = paras.join("\n\n");
+          } else text = lines.join("\n");
+          chars += text.length;
+          pages.push(o.format.value === "md" ? `## Page ${n}\n\n${text}` : text);
+          page.cleanup();
+        }
+      } finally { await doc.destroy(); }
+      const text = pages.join(o.format.value === "md" ? "\n\n" : "\n\n----\n\n") + "\n";
+      const ext = o.format.value === "md" ? "md" : "txt";
+      out.push({ name: `${baseName(file.name)}.${ext}`, blob: new Blob([text], { type: ext === "md" ? "text/markdown" : "text/plain" }), note: chars ? `${plural(doc.numPages, "page")}, ${chars.toLocaleString()} characters` : "no text layer (scanned?)" });
+      if (!preview) preview = text;
+    }
+    o.output.value = preview.length > 200_000 ? preview.slice(0, 200_000) + "\n…(preview cut, download for the full text)" : preview;
+    return out;
+  },
+};
+
+export const pdfTools = [mergeTool, splitTool, rotatePdfTool, deletePagesTool, pageNumbersTool, watermarkPdfTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, pdfToTextTool];

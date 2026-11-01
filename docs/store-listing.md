@@ -26,7 +26,7 @@ IMAGES
 • Convert between JPG, PNG and WebP
 • HEIC (iPhone photos) → JPG or PNG
 • Text watermark with live preview (corners, centre or tiled)
-• Remove metadata: strip EXIF, GPS location, XMP and comments without re-encoding
+• Remove metadata: see the camera, date, exposure and GPS location first, then strip EXIF, GPS, XMP and comments without re-encoding
 • Compress to a target size, e.g. "under 200 KB"
 • Favicon and app-icon generator: favicon.ico, every PNG size, HTML snippet and web manifest
 • Right-click any image on a web page → "Edit image in FileForge"; right-click a PDF link → "Open PDF in FileForge"
@@ -37,14 +37,21 @@ PDF
 • Split by page ranges, one file per page, or into chunks
 • Rotate or delete pages
 • Add page numbers and a diagonal text watermark (DRAFT, CONFIDENTIAL…)
-• Compress scanned PDFs
+• Compress: lossless (text stays selectable) or re-render scans at a lower resolution
+• Remove PDF metadata: title, author, software, dates, keywords, XMP
 • Images → PDF and PDF → images (PNG or JPG, 72–300 dpi)
+• PDF → text or Markdown
 
 TEXT & DATA
 • Markdown → PDF with a live preview and three themes
 • CSV ⇄ JSON
 • Format and validate JSON, with the exact position of an error
 • Base64 encode and decode, for text and files
+
+EVERYDAY DETAILS
+• Batches show progress and can be cancelled; results download one by one, as a ZIP, or copy to the clipboard
+• Every tool remembers the options you used last time
+• Drop files anywhere on the page, paste images from the clipboard, Ctrl+Enter to run
 
 PRIVACY AND PERMISSIONS
 Everything runs locally: there is no server, no account, no analytics and no network requests. The extension needs only the contextMenus permission for the right-click entry. When you use "Edit image in FileForge" on a page, it asks for access to that one site so it can read the image, and only then.
@@ -64,7 +71,7 @@ FileForge — набір інструментів для щоденної роб
 • Конвертація між JPG, PNG і WebP
 • HEIC (фото з iPhone) → JPG або PNG
 • Текстовий водяний знак із живим попереднім переглядом
-• Видалення метаданих: EXIF, GPS-локація, XMP і коментарі, без перекодування
+• Видалення метаданих: спершу показує камеру, дату, витримку й GPS-локацію, потім прибирає EXIF, GPS, XMP і коментарі без перекодування
 • Генератор фавіконок і іконок застосунку: favicon.ico, усі PNG-розміри, HTML-сніпет і web manifest
 • Права кнопка на будь-якому зображенні → «Редагувати зображення у FileForge»
 
@@ -73,8 +80,10 @@ PDF
 • Розділення за діапазонами сторінок, по одній сторінці або частинами
 • Поворот і видалення сторінок
 • Нумерація сторінок і діагональний водяний знак (ЧЕРНЕТКА, КОНФІДЕНЦІЙНО…)
-• Стиснення сканованих PDF
+• Стиснення: без втрат (текст лишається текстом) або перерендер сканів у меншій роздільності
+• Видалення метаданих PDF: назва, автор, програма, дати, ключові слова, XMP
 • Зображення → PDF і PDF → зображення (PNG або JPG, 72–300 dpi)
+• PDF → текст або Markdown
 • Права кнопка на посиланні на PDF → «Відкрити PDF у FileForge»
 
 ТЕКСТ І ДАНІ
@@ -82,6 +91,11 @@ PDF
 • CSV ⇄ JSON
 • Форматування й перевірка JSON із точною позицією помилки
 • Base64 для тексту й файлів
+
+ДРІБНИЦІ, ЯКІ ЕКОНОМЛЯТЬ ЧАС
+• Пакетна обробка з прогресом і кнопкою «Скасувати»; результати окремо, ZIP-архівом або в буфер обміну
+• Кожен інструмент памʼятає ваші останні налаштування
+• Файли можна кинути будь-де на сторінці, вставити з буфера, Ctrl+Enter запускає
 
 ПРИВАТНІСТЬ І ДОЗВОЛИ
 Усе виконується локально: немає сервера, облікових записів, аналітики й мережевих запитів. Розширенню потрібен лише дозвіл contextMenus для пункту в контекстному меню. Доступ до сайту запитується для одного сайту й лише тоді, коли ви обираєте пункт меню на ньому.

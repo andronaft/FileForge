@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+
+- **PDF to text**: the text layer as .txt or Markdown with a heading per page; wrapped lines are joined back into
+  paragraphs. (#25)
+- **Remove PDF metadata**: shows title, author, software, dates, keywords and XMP, then strips them. Other PDF
+  tools no longer stamp pdf-lib's producer and dates into the files they save. (#23)
+- **Compress PDF** has a lossless mode (default): compact structure, metadata dropped, text stays selectable. (#23)
+- **Remove metadata** (images) shows what it will remove first: camera, lens, date, exposure, software,
+  orientation and the GPS location with a map link. (#24)
+- Progress bar with the current file name and a **Cancel** button for batches; page-by-page progress for
+  PDF rendering. (#17)
+- Every tool remembers the options you used last time (dropdowns, sliders, checkboxes, colours, numbers; not
+  page ranges), with a "Reset options to defaults" link. (#16)
+- **Copy** button on text and image results and on the text tools' output; **Ctrl/⌘+Enter** runs the tool. (#21)
+- Files can be dropped anywhere on the page. On phones the tool list is a dropdown in the top bar instead of a
+  screen-high sidebar. (#22)
+- The installed web app is an "Open with" target for images, PDFs, Markdown, CSV and JSON files. (#26)
+
 ## 0.3.1
 
 ### Fixed

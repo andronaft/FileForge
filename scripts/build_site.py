@@ -37,6 +37,14 @@ index.write_text(html)
     "theme_color": "#1e222c",
     "icons": [{"src": "../icons/icon256.png", "sizes": "256x256", "type": "image/png"},
               {"src": "../icons/icon512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}],
+    # Installed as an app, FileForge appears in the OS "Open with" menu for these types (app.js: launchQueue).
+    "file_handlers": [
+        {"action": "./", "accept": {"image/jpeg": [".jpg", ".jpeg", ".jfif"], "image/png": [".png"], "image/webp": [".webp"],
+                                    "image/gif": [".gif"], "image/bmp": [".bmp"], "image/svg+xml": [".svg"], "image/avif": [".avif"],
+                                    "image/heic": [".heic"], "image/heif": [".heif"]}},
+        {"action": "./", "accept": {"application/pdf": [".pdf"]}},
+        {"action": "./", "accept": {"text/markdown": [".md", ".markdown"], "text/csv": [".csv"], "application/json": [".json"]}},
+    ],
 }, indent=2) + "\n")
 
 files = sorted(p for p in SITE.rglob("*") if p.is_file() and p.suffix not in {".webmanifest"} and p.name != "sw.js")

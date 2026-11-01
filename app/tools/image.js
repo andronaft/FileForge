@@ -212,7 +212,7 @@ const cropTool = {
     const canvas = el("canvas");
     const stage = el("div", { class: "crop-stage" }, [canvas]);
     const aspect = select([["free", "Free"], ["1", "1:1 square"], [String(4 / 3), "4:3"], [String(3 / 2), "3:2"], [String(16 / 9), "16:9"], [String(9 / 16), "9:16 portrait"]], "free");
-    const inX = number(0, { min: 0 }), inY = number(0, { min: 0 }), inW = number(0, { min: 1 }), inH = number(0, { min: 1 });
+    const inX = number(0, { min: 0, "data-noremember": "" }), inY = number(0, { min: 0, "data-noremember": "" }), inW = number(0, { min: 1, "data-noremember": "" }), inH = number(0, { min: 1, "data-noremember": "" });
     const fq = formatQualityRow();
     const info = el("div", { class: "stat" });
     root.append(
@@ -361,10 +361,11 @@ const resizeTool = {
     sizeOf(files[0]).then((d) => { info.textContent = `${files[0].name}: ${d.w} × ${d.h} px${files.length > 1 ? ` (+${files.length - 1} more)` : ""}`; }).catch(() => {});
     this.opts = { mode, width, height, percent, lock, noEnlarge, fq };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const d = await sizeOf(file);
       let w, h;
       if (o.mode.value === "percent") {
@@ -425,11 +426,12 @@ const rotateTool = {
     );
     previewOf(files[0]).then((p) => { base = p; redraw(); }).catch((err) => toast(err.message, "error"));
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const st = this.opts;
     if (!st.rotate && !st.flipH && !st.flipV) throw new Error("Choose a rotation or flip first");
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const r = await processImage(file, { rotate: st.rotate, flipH: st.flipH, flipV: st.flipV, format: this.fq.format, quality: this.fq.quality });
       out.push({ name: outName(file, r.mime, "rotated"), blob: r.blob, note: `${r.width} × ${r.height}` });
     }
@@ -464,10 +466,11 @@ const compressTool = {
     );
     this.opts = { quality, maxDim, target, format };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const o = this.opts;
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       let fmt = o.format.value;
       if (fmt === "auto") fmt = file.type === "image/jpeg" ? "jpeg" : file.type === "image/webp" ? "webp" : "webp";
       const mime = MIME[fmt];
@@ -526,10 +529,11 @@ const convertTool = {
     root.append(fq.row);
     this.fq = fq;
   },
-  async run(files) {
+  async run(files, _root, progress) {
     if (this.fq.format === "keep") throw new Error("Choose a target format");
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const r = await processImage(file, { format: this.fq.format, quality: this.fq.quality });
       out.push({ name: outName(file, r.mime, ""), blob: r.blob, note: `${r.width} × ${r.height}` });
     }
@@ -547,7 +551,7 @@ const watermarkTool = {
   hint: "JPG, PNG, WebP — multiple files allowed",
   runLabel: "Add watermark",
   renderOptions(root, files) {
-    const text = el("input", { type: "text", value: this.last?.text || "© FileForge", placeholder: "Your text" });
+    const text = el("input", { type: "text", value: this.last?.text || "© FileForge", placeholder: "Your text", "data-remember": "" });
     const position = select([["bottom-right", "Bottom right"], ["bottom-left", "Bottom left"], ["bottom-center", "Bottom centre"], ["top-right", "Top right"], ["top-left", "Top left"], ["middle-center", "Centre"], ["tile", "Tiled diagonal"]], this.last?.position || "bottom-right");
     const sizePct = number(this.last?.sizePct || 5, { min: 1, max: 50 });
     const opacity = el("input", { type: "range", min: 5, max: 100, value: Math.round((this.last?.opacity || 0.5) * 100) });
@@ -573,11 +577,12 @@ const watermarkTool = {
     previewOf(files[0], 420).then((p) => { base = p; redraw(); }).catch((err) => toast(err.message, "error"));
     this.opts = opts; this.fq = fq;
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const wm = this.opts();
     if (!wm.text.trim()) throw new Error("Enter the watermark text");
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const r = await processImage(file, { watermark: wm, format: this.fq.format, quality: this.fq.quality });
       out.push({ name: outName(file, r.mime, "watermarked"), blob: r.blob, note: `${r.width} × ${r.height}` });
     }
@@ -725,12 +730,13 @@ const heicTool = {
     this.fq = fq;
     heicSandbox().catch(() => {});
   },
-  async run(files) {
+  async run(files, _root, progress) {
     if (HEIC_UNAVAILABLE) throw new Error("HEIC is unavailable in the Firefox extension; use the web version at " + WEB_APP);
     const fmt = this.fq.format === "keep" ? "jpeg" : this.fq.format;
     const mime = MIME[fmt];
     const out = [];
     for (const file of files) {
+      await progress?.tick(file.name);
       const buffers = await decodeHeic(file, mime, this.fq.quality / 100);
       buffers.forEach((buf, i) => {
         const blob = new Blob([buf], { type: mime });
