@@ -455,6 +455,7 @@ const compressTool = {
     const maxDim = number("", { min: 1, placeholder: "no limit" });
     const target = number("", { min: 1, placeholder: "no target" });
     const format = select([["auto", "Auto (JPEG→JPEG, WebP→WebP, PNG→WebP)"], ["jpeg", "JPEG"], ["webp", "WebP"], ["png", "PNG (lossless, only resizes)"]], "auto");
+    const estimate = el("div", { class: "stat", text: "" });
     root.append(
       el("div", { class: "row" }, [
         field("Quality", el("div", { class: "row" }, [quality, qLabel]), "75 is a good balance; 60 is noticeably smaller"),
@@ -463,8 +464,51 @@ const compressTool = {
         field("Output format", format),
       ]),
       el("div", { class: "stat", text: `${plural(files.length, "file")}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
+      estimate,
     );
     this.opts = { quality, maxDim, target, format };
+    this.preview(root, files[0], estimate);
+  },
+  /** Before/after view of the first file with a live size estimate for the current settings. */
+  preview(root, file, estimate) {
+    const o = this.opts;
+    const before = el("canvas"), after = el("canvas");
+    const afterWrap = el("div", { class: "after" }, [after]);
+    const divider = el("div", { class: "divider" });
+    const slider = el("input", { type: "range", min: 0, max: 100, value: 50, "aria-label": "Compare before and after", "data-noremember": "" });
+    slider.addEventListener("input", () => { afterWrap.style.clipPath = `inset(0 0 0 ${slider.value}%)`; divider.style.left = `${slider.value}%`; });
+    const box = el("div", { class: "compare", hidden: true }, [before, afterWrap, divider, el("span", { class: "tag l", text: "Original" }), el("span", { class: "tag r", text: "Compressed" }), slider]);
+    root.append(box);
+    let img = null, token = 0, timer = null;
+    const fmtOf = () => { const f = o.format.value; return f === "auto" ? (file.type === "image/jpeg" ? "jpeg" : "webp") : f; };
+    const update = async () => {
+      const my = ++token;
+      if (!img) {
+        try { img = await loadImage(file); } catch (_) { estimate.textContent = ""; return; }
+        const d = dims(img), k = Math.min(1, 480 / d.w, 360 / d.h);
+        before.width = after.width = Math.round(d.w * k); before.height = after.height = Math.round(d.h * k);
+        before.getContext("2d").drawImage(img, 0, 0, before.width, before.height);
+        box.hidden = false;
+      }
+      const fmt = fmtOf(), d = dims(img), limit = Number(o.maxDim.value) || 0;
+      let w = d.w, h = d.h;
+      if (limit && Math.max(w, h) > limit) { const k = limit / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+      estimate.textContent = "Estimating…";
+      const blob = await encode(resizeStage(img, w, h), MIME[fmt], fmt === "png" ? undefined : Number(o.quality.value) / 100);
+      if (my !== token) return;
+      const saved = 1 - blob.size / file.size;
+      const targetKb = Number(o.target.value);
+      estimate.textContent = `${file.name}: ${formatBytes(file.size)} → ${formatBytes(blob.size)} at quality ${o.quality.value} (${saved > 0 ? `−${Math.round(saved * 100)}%` : "no gain, the original will be kept"})${targetKb > 0 && fmt !== "png" ? ` · the ${targetKb} KB target is applied when you click Compress` : ""}${w !== d.w ? ` · ${w} × ${h}` : ""}`;
+      try {
+        const bmp = await createImageBitmap(blob);
+        if (my !== token) { bmp.close(); return; }
+        after.getContext("2d").drawImage(bmp, 0, 0, after.width, after.height);
+        bmp.close();
+      } catch (_) { /* preview only */ }
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(() => update().catch(() => {}), 300); };
+    for (const i of [o.quality, o.maxDim, o.target, o.format]) { i.addEventListener("input", schedule); i.addEventListener("change", schedule); }
+    schedule();
   },
   async run(files, _root, progress) {
     const o = this.opts;
@@ -587,6 +631,120 @@ const watermarkTool = {
       out.push({ name: outName(file, r.mime, "watermarked"), blob: r.blob, note: `${r.width} × ${r.height}` });
     }
     return out;
+  },
+};
+
+// ---------- redact ----------
+
+/** Paints the redaction boxes onto `canvas` in place. boxes: [{x, y, w, h}] in canvas pixels. */
+function applyRedactions(canvas, boxes, mode, strengthPct) {
+  const ctx = canvas.getContext("2d");
+  for (const b of boxes) {
+    const x = Math.max(0, Math.round(b.x)), y = Math.max(0, Math.round(b.y));
+    const w = Math.min(canvas.width - x, Math.round(b.w)), h = Math.min(canvas.height - y, Math.round(b.h));
+    if (w < 1 || h < 1) continue;
+    if (mode === "black") { ctx.fillStyle = "#000"; ctx.fillRect(x, y, w, h); continue; }
+    const px = Math.max(4, Math.round((canvas.width * (strengthPct || 3)) / 100));
+    if (mode === "pixelate") {
+      const t = makeCanvas(Math.ceil(w / px), Math.ceil(h / px));
+      t.getContext("2d").drawImage(canvas, x, y, w, h, 0, 0, t.width, t.height);
+      ctx.save(); ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(t, 0, 0, t.width, t.height, x, y, w, h);
+      ctx.restore();
+    } else {
+      // blur: draw the region into a temp canvas with a blur filter, then paint it back
+      const t = makeCanvas(w, h);
+      const tc = t.getContext("2d");
+      tc.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      tc.filter = `blur(${px / 2}px)`;
+      tc.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      tc.drawImage(canvas, x, y, w, h, 0, 0, w, h);
+      ctx.drawImage(t, x, y);
+    }
+  }
+}
+
+const redactTool = {
+  id: "redact",
+  title: "Redact image",
+  description: "Black out, pixelate or blur parts of a screenshot or photo: names, faces, addresses, card numbers. Draw as many boxes as you need.",
+  accept: "image/*",
+  multiple: false,
+  hint: "JPG, PNG, WebP, GIF, BMP — one image at a time",
+  runLabel: "Redact & download",
+  renderOptions(root, files) {
+    const st = { img: null, w: 0, h: 0, scale: 1, boxes: [] };
+    this.state = st;
+    const mode = select([["black", "Solid black (safest)"], ["pixelate", "Pixelate"], ["blur", "Blur"]], "black");
+    const strength = number(3, { min: 1, max: 20 });
+    const canvas = el("canvas");
+    const stage = el("div", { class: "crop-stage" }, [canvas]);
+    const info = el("div", { class: "stat", text: "Loading…" });
+    const fq = formatQualityRow();
+    this.fq = fq; this.opts = { mode, strength };
+    root.append(
+      el("div", { class: "row" }, [
+        field("Style", mode, "Blur and pixelation can sometimes be undone for text; use solid black for anything that must stay secret."),
+        field("Block size (% of width)", strength),
+        el("div", { class: "actions" }, [
+          el("button", { type: "button", text: "Undo last box", onclick: () => { st.boxes.pop(); draw(); } }),
+          el("button", { type: "button", text: "Clear all", onclick: () => { st.boxes = []; draw(); } }),
+        ]),
+      ]),
+      stage, info, fq.row,
+    );
+    const draw = (live) => {
+      if (!st.img) return;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(st.img, 0, 0, canvas.width, canvas.height);
+      const k = st.scale;
+      const boxes = [...st.boxes, ...(live ? [live] : [])];
+      applyRedactions(canvas, boxes.map((b) => ({ x: b.x * k, y: b.y * k, w: b.w * k, h: b.h * k })), mode.value, Number(strength.value));
+      ctx.strokeStyle = "#ff8c28"; ctx.lineWidth = 1.5;
+      for (const b of boxes) ctx.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k);
+      info.textContent = st.boxes.length ? `${plural(st.boxes.length, "box", "boxes")} · click a box to remove it, drag to add another` : `${st.w} × ${st.h} px · drag over the parts to hide`;
+    };
+    mode.addEventListener("change", () => draw());
+    strength.addEventListener("input", () => draw());
+    (async () => {
+      st.img = await loadImage(files[0]);
+      const d = dims(st.img); st.w = d.w; st.h = d.h;
+      const maxW = Math.min(860, root.clientWidth - 32 || 860);
+      st.scale = Math.min(1, maxW / d.w, 540 / d.h);
+      canvas.width = Math.round(d.w * st.scale); canvas.height = Math.round(d.h * st.scale);
+      draw();
+    })().catch((err) => toast(err.message, "error"));
+    let start = null;
+    const toSrc = (e) => { const r = canvas.getBoundingClientRect(); const k = canvas.width / r.width / st.scale; return { x: Math.max(0, Math.min(st.w, (e.clientX - r.left) * k)), y: Math.max(0, Math.min(st.h, (e.clientY - r.top) * k)) }; };
+    const boxFrom = (a, b) => ({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) });
+    canvas.addEventListener("pointerdown", (e) => { if (!st.img) return; canvas.setPointerCapture(e.pointerId); start = toSrc(e); });
+    canvas.addEventListener("pointermove", (e) => { if (!start) return; draw(boxFrom(start, toSrc(e))); });
+    const end = (e) => {
+      if (!start) return;
+      const b = boxFrom(start, toSrc(e)); start = null;
+      if (b.w < 3 || b.h < 3) {
+        // a click: remove the box under the pointer
+        const p = toSrc(e);
+        const hit = st.boxes.findLastIndex((x) => p.x >= x.x && p.x <= x.x + x.w && p.y >= x.y && p.y <= x.y + x.h);
+        if (hit >= 0) st.boxes.splice(hit, 1);
+      } else st.boxes.push({ x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.w), h: Math.round(b.h) });
+      draw();
+    };
+    canvas.addEventListener("pointerup", end);
+    canvas.addEventListener("pointercancel", () => { start = null; draw(); });
+  },
+  async run(files) {
+    const st = this.state;
+    if (!st?.boxes.length) throw new Error("Draw at least one box over the part to hide");
+    const img = await loadImage(files[0]);
+    const d = dims(img);
+    const c = makeCanvas(d.w, d.h);
+    c.getContext("2d").drawImage(img, 0, 0);
+    if (img.close) img.close();
+    applyRedactions(c, st.boxes, this.opts.mode.value, Number(this.opts.strength.value));
+    const mime = this.fq.format === "keep" ? (formatOf(files[0]) || "image/png") : MIME[this.fq.format];
+    const blob = await encode(c, mime, this.fq.quality / 100);
+    return [{ name: outName(files[0], mime, "redacted"), blob, note: `${plural(st.boxes.length, "area")} hidden` }];
   },
 };
 
@@ -747,4 +905,4 @@ const heicTool = {
   },
 };
 
-export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, watermarkTool, metadataTool, faviconTool];
+export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, watermarkTool, redactTool, metadataTool, faviconTool];

@@ -32,6 +32,103 @@ async function renderPages(file, scale, indices, onPage, progress) {
   }
 }
 
+// ---------- page thumbnails ----------
+
+let openDocs = [];
+async function openDoc(file) {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  openDocs.push(doc);
+  return doc;
+}
+/** Frees the pdf.js documents behind thumbnails of a previous render. */
+function closeDocs() {
+  for (const d of openDocs) d.destroy().catch(() => {});
+  openDocs = [];
+}
+
+async function renderThumb(doc, pageIndex, width) {
+  const page = await doc.getPage(pageIndex + 1);
+  const scale = width / page.getViewport({ scale: 1 }).width;
+  const vp = page.getViewport({ scale });
+  const c = document.createElement("canvas");
+  c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  await page.render({ canvasContext: ctx, viewport: vp, intent: "print" }).promise;
+  page.cleanup();
+  return c;
+}
+
+/** First page of a PDF as a canvas no larger than `size` px (for the file list). */
+export async function pdfThumbnail(file, size) {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  try {
+    const page = await doc.getPage(1);
+    const vp1 = page.getViewport({ scale: 1 });
+    const c = await renderThumb(doc, 0, Math.round(size * Math.min(1, vp1.width / vp1.height)));
+    return c;
+  } finally { await doc.destroy(); }
+}
+
+/** Page tiles for `indices`: the first screenful renders right away, the rest as they scroll into view. */
+function pageTiles(doc, grid, indices, width = 104) {
+  const EAGER = 24;
+  const paint = (t) => { const i = Number(t.dataset.page); renderThumb(doc, i, width).then((c) => { t.querySelector(".ph")?.replaceWith(c); }).catch(() => {}); };
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) { if (!e.isIntersecting) continue; io.unobserve(e.target); paint(e.target); }
+  }, { root: grid, rootMargin: "240px" });
+  const tiles = indices.map((i, k) => {
+    const t = el("button", { type: "button", class: "page", "data-page": String(i), title: `Page ${i + 1}` }, [el("div", { class: "ph" }), el("span", { class: "page-n", text: String(i + 1) })]);
+    if (k < EAGER) paint(t); else io.observe(t);
+    return t;
+  });
+  grid.append(...tiles);
+  return tiles;
+}
+
+/** "1-3, 5" for a set of 0-based page indices. */
+function rangesText(set, total) {
+  const idx = [...set].filter((i) => i >= 0 && i < total).sort((a, b) => a - b);
+  const parts = [];
+  for (let k = 0; k < idx.length; k++) {
+    let end = k;
+    while (end + 1 < idx.length && idx[end + 1] === idx[end] + 1) end++;
+    parts.push(end > k ? `${idx[k] + 1}-${idx[end] + 1}` : String(idx[k] + 1));
+    k = end;
+  }
+  return parts.join(", ");
+}
+
+/**
+ * Clickable page thumbnails kept in sync with a "1-3, 5" text input: click toggles a page, shift-click selects a
+ * range, typing in the input updates the tiles.
+ */
+async function pagePicker(root, file, input) {
+  const grid = el("div", { class: "pages", role: "group", "aria-label": "Pages" });
+  const hint = el("div", { class: "stat", text: "Loading pages…" });
+  root.append(hint, grid);
+  let doc;
+  try { doc = await openDoc(file); } catch (err) { hint.textContent = err.message; return; }
+  const total = doc.numPages;
+  const tiles = pageTiles(doc, grid, Array.from({ length: total }, (_, i) => i));
+  let selected = new Set();
+  let last = null;
+  const paint = () => { tiles.forEach((t, i) => { t.classList.toggle("on", selected.has(i)); t.setAttribute("aria-pressed", selected.has(i) ? "true" : "false"); }); hint.textContent = selected.size ? `${plural(selected.size, "page")} selected · click to toggle, shift-click for a range` : "Click pages to select them, or type ranges above"; };
+  const fromInput = () => { try { selected = new Set(input.value.trim() ? parseRanges(input.value, total) : []); } catch (_) { selected = new Set(); } paint(); };
+  input.addEventListener("input", fromInput);
+  tiles.forEach((t, i) => t.addEventListener("click", (e) => {
+    if (e.shiftKey && last !== null) { const [a, b] = last < i ? [last, i] : [i, last]; for (let k = a; k <= b; k++) selected.add(k); }
+    else if (selected.has(i)) selected.delete(i); else selected.add(i);
+    last = i;
+    input.value = rangesText(selected, total);
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    paint();
+  }));
+  fromInput();
+}
+
 function toBlob(canvas, mime, quality) {
   return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error("Encoding failed"))), mime, quality));
 }
@@ -131,8 +228,11 @@ const splitTool = {
     const chunkRow = el("div", { class: "row", hidden: true }, [field("Pages per file", chunk)]);
     mode.addEventListener("change", () => { rangesRow.hidden = mode.value !== "ranges"; chunkRow.hidden = mode.value !== "chunks"; });
     const info = el("div", { class: "stat", text: "Counting pages…" });
-    root.append(el("div", { class: "row" }, [field("Mode", mode)]), rangesRow, chunkRow, info);
+    const picker = el("div");
+    mode.addEventListener("change", () => { picker.hidden = mode.value !== "ranges"; });
+    root.append(el("div", { class: "row" }, [field("Mode", mode)]), rangesRow, chunkRow, info, picker);
     pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; this.total = n; }).catch((err) => { info.textContent = err.message; });
+    closeDocs(); pagePicker(picker, files[0], ranges);
     this.opts = { mode, ranges, chunk };
   },
   async run(files) {
@@ -183,8 +283,11 @@ const rotatePdfTool = {
     const ranges = el("input", { type: "text", placeholder: "1, 3-5" });
     const rangesField = field("Pages", ranges);
     rangesField.hidden = true;
-    which.addEventListener("change", () => { rangesField.hidden = which.value !== "ranges"; });
-    root.append(el("div", { class: "row" }, [field("Rotation", angle), field("Apply to", which), rangesField]));
+    const picker = el("div", { hidden: true });
+    which.addEventListener("change", () => { rangesField.hidden = which.value !== "ranges"; picker.hidden = which.value !== "ranges"; });
+    root.append(el("div", { class: "row" }, [field("Rotation", angle), field("Apply to", which), rangesField]), picker);
+    if (files.length > 1) picker.append(el("div", { class: "stat", text: `Pages of ${files[0].name}; the same page numbers are rotated in every file.` }));
+    closeDocs(); pagePicker(picker, files[0], ranges);
     this.opts = { angle, which, ranges };
   },
   async run(files, _root, progress) {
@@ -314,8 +417,11 @@ const pdfToImagesTool = {
     const rangesField = field("Pages", ranges); rangesField.hidden = true;
     which.addEventListener("change", () => { rangesField.hidden = which.value !== "ranges"; });
     const info = el("div", { class: "stat", text: "Counting pages…" });
-    root.append(el("div", { class: "row" }, [field("Format", format), field("Resolution", dpi), field("Apply to", which), rangesField]), info);
+    const picker = el("div", { hidden: true });
+    which.addEventListener("change", () => { picker.hidden = which.value !== "ranges"; });
+    root.append(el("div", { class: "row" }, [field("Format", format), field("Resolution", dpi), field("Apply to", which), rangesField]), info, picker);
     pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; }).catch((err) => { info.textContent = err.message; });
+    closeDocs(); pagePicker(picker, files[0], ranges);
     this.opts = { format, dpi, which, ranges };
   },
   async run(files, _root, progress) {
@@ -409,8 +515,10 @@ const deletePagesTool = {
   renderOptions(root, files) {
     const ranges = el("input", { type: "text", placeholder: "2, 5-7" });
     const info = el("div", { class: "stat", text: "Counting pages…" });
-    root.append(el("div", { class: "row" }, [field("Pages to delete", ranges)]), info);
+    const picker = el("div");
+    root.append(el("div", { class: "row" }, [field("Pages to delete", ranges)]), info, picker);
     pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; }).catch((err) => { info.textContent = err.message; });
+    closeDocs(); pagePicker(picker, files[0], ranges);
     this.opts = { ranges };
   },
   async run(files) {
@@ -420,6 +528,82 @@ const deletePagesTool = {
     if (indices.length >= total) throw new Error("You cannot delete every page");
     for (const i of [...indices].reverse()) doc.removePage(i);
     return [{ name: `${baseName(files[0].name)}-edited.pdf`, blob: pdfBlob(await doc.save()), note: `${doc.getPageCount()} of ${total} pages kept` }];
+  },
+};
+
+// ---------- reorder pages ----------
+
+const reorderTool = {
+  id: "pdf-reorder",
+  title: "Reorder pages",
+  description: "Drag page thumbnails into a new order, drop the ones you do not need, or reverse the whole document.",
+  accept: "application/pdf,.pdf",
+  multiple: false,
+  hint: "One PDF file",
+  runLabel: "Save new order",
+  renderOptions(root, files) {
+    const st = { order: [], removed: new Set(), total: 0 };
+    this.state = st;
+    const info = el("div", { class: "stat", text: "Loading pages…" });
+    const grid = el("div", { class: "pages", role: "list" });
+    const bar = el("div", { class: "actions" }, [
+      el("button", { type: "button", text: "Reverse", onclick: () => { st.order.reverse(); paint(); } }),
+      el("button", { type: "button", text: "Reset", onclick: () => { st.order = Array.from({ length: st.total }, (_, i) => i); st.removed.clear(); paint(); } }),
+      info,
+    ]);
+    root.append(bar, grid);
+    let tiles = new Map();
+    const paint = () => {
+      grid.replaceChildren(...st.order.map((i) => tiles.get(i)));
+      st.order.forEach((i, pos) => { const t = tiles.get(i); t.classList.toggle("removed", st.removed.has(i)); t.querySelector(".page-n").textContent = st.removed.has(i) ? `was ${i + 1}` : `${pos + 1} (was ${i + 1})`; });
+      const kept = st.order.filter((i) => !st.removed.has(i)).length;
+      info.textContent = `${plural(kept, "page")} kept of ${st.total}. Drag to reorder, ✕ to drop a page.`;
+    };
+    closeDocs();
+    openDoc(files[0]).then((doc) => {
+      st.total = doc.numPages;
+      st.order = Array.from({ length: st.total }, (_, i) => i);
+      const list = pageTiles(doc, grid, st.order);
+      let from = null;
+      list.forEach((t, i) => {
+        tiles.set(i, t);
+        t.setAttribute("draggable", "true");
+        t.setAttribute("role", "listitem");
+        t.append(el("button", { type: "button", class: "icon mini", text: "✕", title: "Drop this page", onclick: (e) => { e.stopPropagation(); if (st.removed.has(i)) st.removed.delete(i); else st.removed.add(i); paint(); } }));
+        t.addEventListener("click", () => { if (st.removed.has(i)) { st.removed.delete(i); paint(); } });
+        t.addEventListener("dragstart", (e) => { from = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); t.classList.add("dragging"); });
+        t.addEventListener("dragend", () => { t.classList.remove("dragging"); grid.querySelectorAll(".drop-before, .drop-after").forEach((n) => n.classList.remove("drop-before", "drop-after")); });
+        t.addEventListener("dragover", (e) => {
+          if (from === null || from === i) return;
+          e.preventDefault(); e.dataTransfer.dropEffect = "move";
+          const after = e.clientX > t.getBoundingClientRect().left + t.offsetWidth / 2;
+          t.classList.toggle("drop-after", after); t.classList.toggle("drop-before", !after);
+        });
+        t.addEventListener("drop", (e) => {
+          if (from === null) return;
+          e.preventDefault(); e.stopPropagation();
+          const after = e.clientX > t.getBoundingClientRect().left + t.offsetWidth / 2;
+          const fromPos = st.order.indexOf(from), toPosBase = st.order.indexOf(i);
+          st.order.splice(fromPos, 1);
+          let to = toPosBase + (after ? 1 : 0);
+          if (fromPos < to) to--;
+          st.order.splice(to, 0, from);
+          from = null; paint();
+        });
+      });
+      paint();
+    }).catch((err) => { info.textContent = err.message; });
+  },
+  async run(files) {
+    const st = this.state;
+    const keep = st.order.filter((i) => !st.removed.has(i));
+    if (!keep.length) throw new Error("Keep at least one page");
+    const src = await loadPdf(files[0]);
+    const doc = await PDFDocument.create();
+    const pages = await doc.copyPages(src, keep);
+    pages.forEach((p) => doc.addPage(p));
+    const unchanged = keep.length === st.total && keep.every((v, k) => v === k);
+    return [{ name: `${baseName(files[0].name)}-reordered.pdf`, blob: pdfBlob(await doc.save()), note: unchanged ? "same order as the original" : `${plural(keep.length, "page")}, new order` }];
   },
 };
 
@@ -644,4 +828,4 @@ const pdfToTextTool = {
   },
 };
 
-export const pdfTools = [mergeTool, splitTool, rotatePdfTool, deletePagesTool, pageNumbersTool, watermarkPdfTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, pdfToTextTool];
+export const pdfTools = [mergeTool, splitTool, reorderTool, rotatePdfTool, deletePagesTool, pageNumbersTool, watermarkPdfTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, pdfToTextTool];

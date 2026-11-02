@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+
+- **Redact image**: draw boxes over names, faces, addresses or card numbers and black them out, pixelate or
+  blur them. Solid black is the default because blur and pixelation can sometimes be undone for text.
+- **Reorder pages** (PDF): drag page thumbnails into a new order, drop pages, reverse the document. (#19)
+- **Page picker**: Split, Delete pages, Rotate PDF and PDF to images show clickable page thumbnails kept in
+  sync with the "1-3, 5" field; shift-click selects a range. (#19)
+- **Compress image** shows a before/after view of the first image with a draggable divider and the resulting
+  size for the current settings, updated as you move the slider. (#20)
+- Thumbnails in the file list; orderable lists (Merge PDF, Images to PDF) can be dragged, sorted by name or
+  date, or reversed. (#18)
+- **Continue with**: send the results of one tool straight into another (crop → compress → watermark) without
+  downloading and re-dropping them.
+- Light/dark theme toggle in the top bar (follows the system until you pick one).
+
 ## 0.4.0
 
 ### Added

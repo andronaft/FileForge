@@ -22,10 +22,11 @@ IMAGES
 • Crop with drag handles or exact numbers, with aspect-ratio presets
 • Resize by pixels or percent, with quality-preserving downscaling
 • Rotate and flip
-• Compress JPG, PNG and WebP, with a size preview before you download
+• Compress JPG, PNG and WebP with a live before/after preview and the resulting size
 • Convert between JPG, PNG and WebP
 • HEIC (iPhone photos) → JPG or PNG
 • Text watermark with live preview (corners, centre or tiled)
+• Redact: black out, pixelate or blur names, faces and card numbers on screenshots
 • Remove metadata: see the camera, date, exposure and GPS location first, then strip EXIF, GPS, XMP and comments without re-encoding
 • Compress to a target size, e.g. "under 200 KB"
 • Favicon and app-icon generator: favicon.ico, every PNG size, HTML snippet and web manifest
@@ -34,8 +35,8 @@ IMAGES
 
 PDF
 • Merge PDFs in the order you choose
-• Split by page ranges, one file per page, or into chunks
-• Rotate or delete pages
+• Split by page ranges (click the page thumbnails), one file per page, or into chunks
+• Reorder pages by dragging thumbnails; rotate or delete pages
 • Add page numbers and a diagonal text watermark (DRAFT, CONFIDENTIAL…)
 • Compress: lossless (text stays selectable) or re-render scans at a lower resolution
 • Remove PDF metadata: title, author, software, dates, keywords, XMP
@@ -49,7 +50,7 @@ TEXT & DATA
 • Base64 encode and decode, for text and files
 
 EVERYDAY DETAILS
-• Batches show progress and can be cancelled; results download one by one, as a ZIP, or copy to the clipboard
+• Batches show progress and can be cancelled; results download one by one, as a ZIP, copy to the clipboard, or go straight into the next tool
 • Every tool remembers the options you used last time
 • Drop files anywhere on the page, paste images from the clipboard, Ctrl+Enter to run
 
@@ -67,18 +68,19 @@ FileForge — набір інструментів для щоденної роб
 • Обрізка перетягуванням або точними числами, пресети співвідношення сторін
 • Зміна розміру в пікселях або відсотках, пресети 4K / Full HD / HD / Instagram
 • Поворот і віддзеркалення
-• Стиснення JPG, PNG і WebP, у тому числі до заданого розміру (наприклад, до 200 КБ)
+• Стиснення JPG, PNG і WebP із живим порівнянням до/після і розміром результату, у тому числі до заданого розміру (наприклад, до 200 КБ)
 • Конвертація між JPG, PNG і WebP
 • HEIC (фото з iPhone) → JPG або PNG
 • Текстовий водяний знак із живим попереднім переглядом
+• Замальовування: закрити чорним, пікселізувати або розмити імена, обличчя й номери карток на скриншотах
 • Видалення метаданих: спершу показує камеру, дату, витримку й GPS-локацію, потім прибирає EXIF, GPS, XMP і коментарі без перекодування
 • Генератор фавіконок і іконок застосунку: favicon.ico, усі PNG-розміри, HTML-сніпет і web manifest
 • Права кнопка на будь-якому зображенні → «Редагувати зображення у FileForge»
 
 PDF
 • Злиття PDF у потрібному порядку
-• Розділення за діапазонами сторінок, по одній сторінці або частинами
-• Поворот і видалення сторінок
+• Розділення за діапазонами сторінок (клік по мініатюрах), по одній сторінці або частинами
+• Зміна порядку сторінок перетягуванням мініатюр; поворот і видалення сторінок
 • Нумерація сторінок і діагональний водяний знак (ЧЕРНЕТКА, КОНФІДЕНЦІЙНО…)
 • Стиснення: без втрат (текст лишається текстом) або перерендер сканів у меншій роздільності
 • Видалення метаданих PDF: назва, автор, програма, дати, ключові слова, XMP
@@ -93,7 +95,7 @@ PDF
 • Base64 для тексту й файлів
 
 ДРІБНИЦІ, ЯКІ ЕКОНОМЛЯТЬ ЧАС
-• Пакетна обробка з прогресом і кнопкою «Скасувати»; результати окремо, ZIP-архівом або в буфер обміну
+• Пакетна обробка з прогресом і кнопкою «Скасувати»; результати окремо, ZIP-архівом, у буфер обміну або одразу в наступний інструмент
 • Кожен інструмент памʼятає ваші останні налаштування
 • Файли можна кинути будь-де на сторінці, вставити з буфера, Ctrl+Enter запускає
 

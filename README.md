@@ -8,7 +8,7 @@
 [![CI](https://github.com/andronaft/FileForge/actions/workflows/ci.yml/badge.svg)](https://github.com/andronaft/FileForge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 24 tools, everything runs on your device. Nothing is uploaded anywhere.
+Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 26 tools, everything runs on your device. Nothing is uploaded anywhere.
 
 ## Install
 
@@ -29,14 +29,16 @@ After installing: click the toolbar icon or press **Alt+Shift+F**, right-click a
 | Images | Crop | Drag a rectangle or type exact pixels, aspect-ratio presets |
 | Images | Resize | Presets (4K, Full HD, HD…), pixels or percent, batch, keeps aspect ratio |
 | Images | Rotate & flip | 90° / 180° / 270°, mirror horizontally or vertically, batch |
-| Images | Compress | Quality slider, target size in KB, optional max dimension, shows how much was saved |
+| Images | Compress | Live before/after preview with the resulting size, quality slider, target size in KB, optional max dimension |
 | Images | Convert | JPEG ⇄ PNG ⇄ WebP (GIF, BMP, SVG, AVIF accepted as input) |
 | Images | HEIC to JPG | iPhone HEIC/HEIF → JPEG, PNG or WebP (libheif in a sandboxed frame) |
 | Images | Watermark | Text in a corner, centred, or tiled diagonally, with live preview |
+| Images | Redact | Black out, pixelate or blur parts of a screenshot or photo, as many boxes as you need |
 | Images | Remove metadata | Shows camera, date, exposure and GPS (with a map link), then strips EXIF, GPS, XMP, IPTC and comments without re-encoding |
 | Images | Favicon & app icons | favicon.ico + PNG set + Apple touch + PWA icons + HTML snippet + webmanifest |
 | PDF | Merge | Combine PDFs in the order you choose |
-| PDF | Split | Extract page ranges, every page separately, or chunks of N pages |
+| PDF | Split | Extract page ranges (click page thumbnails or type them), every page separately, or chunks of N pages |
+| PDF | Reorder pages | Drag page thumbnails into a new order, drop pages, reverse |
 | PDF | Rotate | All pages or a selection, several files at once |
 | PDF | Delete pages | Remove listed pages |
 | PDF | Page numbers | Header or footer, several formats, custom start |
@@ -51,7 +53,7 @@ After installing: click the toolbar icon or press **Alt+Shift+F**, right-click a
 | Text & data | JSON format | Pretty / minify, sort keys, points at the exact error position |
 | Text & data | Base64 | Encode text or any file (optionally as a data: URL), decode to text or file |
 
-Multiple results can be downloaded as a single ZIP or copied to the clipboard. Images can be pasted from the clipboard, dropped anywhere on the page, or opened from the OS "Open with" menu when the web version is installed as an app. Batches show a progress bar with a Cancel button, Ctrl/⌘+Enter runs the tool, and every tool remembers the options you used last time.
+Results can be handed straight to another tool ("Continue with"), downloaded as a single ZIP or copied to the clipboard. The file list shows thumbnails and can be reordered by dragging or sorted by name or date. Images can be pasted from the clipboard, dropped anywhere on the page, or opened from the OS "Open with" menu when the web version is installed as an app. Batches show a progress bar with a Cancel button, Ctrl/⌘+Enter runs the tool, and every tool remembers the options you used last time.
 
 ## Run from source (unpacked)
 

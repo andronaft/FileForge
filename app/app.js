@@ -3,6 +3,7 @@ import { imageTools } from "./tools/image.js";
 import { pdfTools } from "./tools/pdf.js";
 import { markdownTools } from "./tools/markdown.js";
 import { dataTools } from "./tools/data.js";
+import { thumbnail } from "./thumbs.js";
 
 const groups = [
   { title: "Images", tools: imageTools },
@@ -35,6 +36,26 @@ function renderNav() {
   }
 }
 navSelect.addEventListener("change", () => { location.hash = `#${navSelect.value}`; });
+
+// ---------- theme ----------
+// Follows the system by default; the toggle in the top bar pins light or dark (remembered in this browser).
+const themeBtn = document.getElementById("themeBtn");
+function applyTheme(mode) {
+  if (mode) document.documentElement.dataset.theme = mode; else delete document.documentElement.dataset.theme;
+  const dark = mode === "dark" || (!mode && matchMedia("(prefers-color-scheme: dark)").matches);
+  themeBtn.textContent = dark ? "☀️" : "🌙";
+  themeBtn.title = dark ? "Switch to light theme" : "Switch to dark theme";
+}
+themeBtn.addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme === "dark" || (!document.documentElement.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  const next = dark ? "light" : "dark";
+  try { localStorage.setItem("fileforge.theme", next); } catch (_) { /* ignore */ }
+  applyTheme(next);
+});
+let savedTheme = null;
+try { savedTheme = localStorage.getItem("fileforge.theme"); } catch (_) { /* ignore */ }
+applyTheme(savedTheme === "dark" || savedTheme === "light" ? savedTheme : null);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (!document.documentElement.dataset.theme) applyTheme(null); });
 
 function requestedToolId() {
   const hash = location.hash.replace(/^#/, "");
@@ -120,9 +141,11 @@ function addFiles(incoming) {
 }
 
 // Anywhere on the page is a drop target; the dashed box just shows where files go.
-document.addEventListener("dragover", (e) => { e.preventDefault(); ui.dropzone?.classList.add("over"); });
+const draggingFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+document.addEventListener("dragover", (e) => { if (!draggingFiles(e)) return; e.preventDefault(); ui.dropzone?.classList.add("over"); });
 document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) ui.dropzone?.classList.remove("over"); });
 document.addEventListener("drop", (e) => {
+  if (!draggingFiles(e)) return;
   e.preventDefault();
   ui.dropzone?.classList.remove("over");
   if (e.dataTransfer?.files?.length) addFiles([...e.dataTransfer.files]);
@@ -180,22 +203,55 @@ function refresh() {
   const hasFiles = state.files.length > 0;
   ui.fileList.replaceChildren();
   if (hasFiles) {
-    const list = el("ul", { class: "files" });
+    const orderable = tool.orderable && state.files.length > 1;
+    const list = el("ul", { class: `files${orderable ? " orderable" : ""}` });
+    let dragFrom = null;
     state.files.forEach((f, i) => {
-      const row = el("li", {}, [
+      const thumb = el("span", { class: "thumb", "aria-hidden": "true" });
+      thumbnail(f).then((c) => { if (c) thumb.replaceChildren(c); });
+      const row = el("li", { draggable: orderable ? "true" : null, "data-index": String(i) }, [
+        orderable ? el("span", { class: "grip", title: "Drag to reorder", text: "⋮⋮" }) : null,
+        thumb,
         el("span", { class: "file-name", text: f.name, title: f.name }),
         el("span", { class: "file-size", text: formatBytes(f.size) }),
       ]);
-      if (tool.orderable && state.files.length > 1) {
+      if (orderable) {
         row.append(
           el("button", { class: "icon", type: "button", title: "Move up", text: "↑", disabled: i === 0, onclick: () => move(i, -1) }),
           el("button", { class: "icon", type: "button", title: "Move down", text: "↓", disabled: i === state.files.length - 1, onclick: () => move(i, 1) }),
         );
+        row.addEventListener("dragstart", (e) => { dragFrom = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); row.classList.add("dragging"); });
+        row.addEventListener("dragend", () => { row.classList.remove("dragging"); list.querySelectorAll(".drop-before, .drop-after").forEach((n) => n.classList.remove("drop-before", "drop-after")); });
+        row.addEventListener("dragover", (e) => {
+          if (dragFrom === null) return;
+          e.preventDefault(); e.dataTransfer.dropEffect = "move";
+          const after = e.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+          row.classList.toggle("drop-after", after); row.classList.toggle("drop-before", !after);
+        });
+        row.addEventListener("drop", (e) => {
+          if (dragFrom === null) return;
+          e.preventDefault(); e.stopPropagation();
+          const after = e.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+          const [item] = state.files.splice(dragFrom, 1);
+          let to = i + (after ? 1 : 0);
+          if (dragFrom < to) to--;
+          state.files.splice(to, 0, item);
+          dragFrom = null; state.results = []; refresh();
+        });
       }
       row.append(el("button", { class: "icon", type: "button", title: "Remove", text: "✕", onclick: () => { state.files.splice(i, 1); state.results = []; refresh(); } }));
       list.append(row);
     });
     ui.fileList.append(list);
+    if (orderable) {
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+      ui.fileList.append(el("div", { class: "actions sort-row" }, [
+        el("span", { class: "stat", text: "Drag rows to reorder, or" }),
+        el("button", { type: "button", class: "small", text: "Sort by name", onclick: () => { state.files.sort((a, b) => collator.compare(a.name, b.name)); state.results = []; refresh(); } }),
+        el("button", { type: "button", class: "small", text: "Sort by date", onclick: () => { state.files.sort((a, b) => a.lastModified - b.lastModified); state.results = []; refresh(); } }),
+        el("button", { type: "button", class: "small", text: "Reverse", onclick: () => { state.files.reverse(); state.results = []; refresh(); } }),
+      ]));
+    }
   }
   const showControls = hasFiles || tool.filesOptional;
   ui.options.hidden = !showControls;
@@ -256,14 +312,27 @@ function renderResults() {
     ]));
   }
   ui.results.append(list);
+  const actions = el("div", { class: "actions" });
   if (state.results.length > 1) {
-    ui.results.append(el("div", { class: "actions" }, [
-      el("button", { class: "primary", type: "button", text: "Download all (.zip)", onclick: async () => {
-        try { download(await zipFiles(state.results), `fileforge-${state.tool.id}.zip`); }
-        catch (err) { toast(err.message, "error"); }
-      } }),
-    ]));
+    actions.append(el("button", { class: "primary", type: "button", text: "Download all (.zip)", onclick: async () => {
+      try { download(await zipFiles(state.results), `fileforge-${state.tool.id}.zip`); }
+      catch (err) { toast(err.message, "error"); }
+    } }));
   }
+  // Hand the results to another tool (crop → compress → watermark) without downloading and re-dropping them.
+  const asFiles = state.results.map((r) => new File([r.blob], r.name, { type: r.blob.type || guessType(r.name), lastModified: Date.now() }));
+  const next = tools.filter((t) => t.id !== state.tool.id && !t.filesOptional && asFiles.every((f) => accepts(t, f)) && (t.multiple !== false || asFiles.length === 1));
+  if (next.length) {
+    const pick = el("select", { "aria-label": "Continue with" }, next.map((t) => el("option", { value: t.id, text: t.title })));
+    actions.append(el("span", { class: "stat", text: "Continue with" }), pick, el("button", { type: "button", text: "Open", class: "continue", onclick: () => {
+      const files = asFiles;
+      state.files = []; // the results replace the inputs
+      history.replaceState(null, "", `${location.pathname}#${pick.value}`);
+      mount();
+      addFiles(files);
+    } }));
+  }
+  if (actions.childElementCount) ui.results.append(actions);
 }
 
 // ---------- progress ----------
