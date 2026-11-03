@@ -80,7 +80,7 @@ input[type="range"] { width: 220px; max-width: 100%; }
 .nav-item:hover { background: var(--surface-2); }
 .nav-item.active { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 
-.main { padding: 24px; max-width: 980px; width: 100%; display: flex; flex-direction: column; gap: 16px; }
+.main { padding: 24px; max-width: 980px; width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .tool-head h1 { margin: 0 0 4px; font-size: 24px; }
 .tool-head p { margin: 0; color: var(--muted); }
 
@@ -112,8 +112,10 @@ input[type="range"] { width: 220px; max-width: 100%; }
 .files li.drop-after { box-shadow: 0 3px 0 0 var(--accent); }
 .sort-row { margin-top: 8px; }
 button.small { padding: 4px 10px; font-size: 13px; }
-.theme { margin-left: auto; font-size: 16px; line-height: 1; }
-.nav-select + .theme { margin-left: 8px; }
+.view, .theme { font-size: 16px; line-height: 1; }
+.view { margin-left: auto; }
+.view[hidden] + .theme { margin-left: auto; }
+.nav-select + .view { margin-left: 8px; }
 .pages { display: flex; flex-wrap: wrap; gap: 10px; max-height: 420px; overflow: auto; padding: 4px; }
 .page { position: relative; width: 112px; padding: 4px 4px 20px; background: var(--surface-2); border: 2px solid var(--border); border-radius: 8px; cursor: pointer; text-align: center; }
 .page canvas, .page .ph { display: block; width: 100%; height: auto; min-height: 60px; background: #fff; border-radius: 3px; }
@@ -174,13 +176,32 @@ table.meta td { padding: 3px 0; word-break: break-word; }
 .toast-error { background: var(--danger); color: #fff; }
 
 @media (max-width: 820px) {
-  .layout { grid-template-columns: 1fr; }
+  .layout { grid-template-columns: minmax(0, 1fr); }
   .sidebar { display: none; }
   .nav-select { display: block; }
   .tagline { display: none; }
   .main { padding: 16px; }
   .md-grid { grid-template-columns: 1fr; }
 }
+
+/* Compact layout: the extension's side panel / sidebar or a small pop-up window (?view=side). */
+:root[data-view="side"] .layout { grid-template-columns: minmax(0, 1fr); }
+:root[data-view="side"] .sidebar, :root[data-view="side"] .tagline, :root[data-view="side"] .brand span { display: none; }
+:root[data-view="side"] .topbar { gap: 8px; padding: 8px 12px; flex-wrap: nowrap; position: sticky; top: 0; z-index: 5; }
+:root[data-view="side"] .nav-select { display: block; flex: 1; min-width: 0; max-width: none; margin-left: 0; }
+:root[data-view="side"] .main { padding: 12px; gap: 12px; }
+:root[data-view="side"] .tool-head h1 { font-size: 19px; }
+:root[data-view="side"] .tool-head p { font-size: 13px; }
+:root[data-view="side"] .dropzone { padding: 18px 12px; }
+:root[data-view="side"] .md-grid { grid-template-columns: 1fr; }
+:root[data-view="side"] .page { width: 84px; }
+:root[data-view="side"] input[type="text"], :root[data-view="side"] input[type="range"] { width: 100%; }
+:root[data-view="side"] .field > textarea { min-height: 200px; }
+:root[data-view="side"] .files li { flex-wrap: wrap; }
+:root[data-view="side"] .file-name { flex: 1 1 140px; min-width: 0; }
+:root[data-view="side"] .file-note { white-space: normal; }
+:root[data-view="side"] select { width: 100%; min-width: 0; }
+:root[data-view="side"] .compare canvas { width: 100%; height: auto; }
 
 input[type="color"] { width: 48px; height: 36px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
 input[type="text"] { width: 220px; max-width: 100%; }

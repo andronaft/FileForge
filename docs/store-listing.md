@@ -53,9 +53,10 @@ EVERYDAY DETAILS
 • Batches show progress and can be cancelled; results download one by one, as a ZIP, copy to the clipboard, or go straight into the next tool
 • Every tool remembers the options you used last time
 • Drop files anywhere on the page, paste images from the clipboard, Ctrl+Enter to run
+• Side panel mode: keep FileForge open beside the page you are working on; the right-click entries then load files straight into the panel
 
 PRIVACY AND PERMISSIONS
-Everything runs locally: there is no server, no account, no analytics and no network requests. The extension needs only the contextMenus permission for the right-click entry. When you use "Edit image in FileForge" on a page, it asks for access to that one site so it can read the image, and only then.
+Everything runs locally: there is no server, no account, no analytics and no network requests. The extension needs only the contextMenus permission for the right-click entry and sidePanel to show itself in the side panel. When you use "Edit image in FileForge" on a page, it asks for access to that one site so it can read the image, and only then.
 
 Open source: https://github.com/andronaft/FileForge
 Web version: https://andronaft.github.io/FileForge/
@@ -98,9 +99,10 @@ PDF
 • Пакетна обробка з прогресом і кнопкою «Скасувати»; результати окремо, ZIP-архівом, у буфер обміну або одразу в наступний інструмент
 • Кожен інструмент памʼятає ваші останні налаштування
 • Файли можна кинути будь-де на сторінці, вставити з буфера, Ctrl+Enter запускає
+• Режим бічної панелі: FileForge відкривається збоку від сторінки, з якою ви працюєте; пункти контекстного меню тоді завантажують файли прямо в панель
 
 ПРИВАТНІСТЬ І ДОЗВОЛИ
-Усе виконується локально: немає сервера, облікових записів, аналітики й мережевих запитів. Розширенню потрібен лише дозвіл contextMenus для пункту в контекстному меню. Доступ до сайту запитується для одного сайту й лише тоді, коли ви обираєте пункт меню на ньому.
+Усе виконується локально: немає сервера, облікових записів, аналітики й мережевих запитів. Розширенню потрібен лише дозвіл contextMenus для пункту в контекстному меню та sidePanel, щоб показуватися в бічній панелі. Доступ до сайту запитується для одного сайту й лише тоді, коли ви обираєте пункт меню на ньому.
 
 Відкритий код: https://github.com/andronaft/FileForge
 Веб-версія: https://andronaft.github.io/FileForge/
@@ -112,6 +114,7 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 ## Permission justifications
 
 - **contextMenus**: the "Edit image in FileForge" entry in the right-click menu of images and "Open PDF in FileForge" on PDF links and pages.
+- **sidePanel**: shows the FileForge page in Chrome's side panel when the user picks "Open in side panel" or the ◨ button; the page is the extension's own, and the permission gives no access to web pages.
 - **scripting**: only used when "Edit image in FileForge" is chosen on an image that exists solely inside the page (a `blob:` URL, e.g. an image editor's canvas or a pasted screenshot). A one-line script runs in that tab, after the user granted that site, to read that one image's bytes. No content scripts are registered and nothing runs on pages the user did not pick.
 - **Optional host permissions (`<all_urls>`)**: requested for a single site, only when the user chooses one of those menu items there, so the extension can fetch that image or PDF. Never requested up front.
 - **Sandbox page** (`app/heic-sandbox.html`): runs the HEIC decoder (heic2any / libheif), which needs `new Function`; it is isolated from the extension's privileges and only exchanges image bytes with the app page.

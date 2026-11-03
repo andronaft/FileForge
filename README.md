@@ -20,6 +20,8 @@ Local-first file tools for the browser: crop, resize, rotate, compress and conve
 
 After installing: click the toolbar icon or press **Alt+Shift+F**, right-click any image → **Edit image in FileForge**, or right-click a PDF link → **Open PDF in FileForge**.
 
+Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon → **Open in side panel**) moves FileForge into the browser's side panel (Chrome, Edge, Brave, Opera) or sidebar (Firefox), beside the page you are working on. The right-click menu items then open files there too. ⧉ sends it back to a full tab. The web version opens a small pop-up window instead.
+
 ![Crop image in FileForge](docs/screenshots/crop.png)
 
 ## Tools
@@ -79,7 +81,7 @@ Then open `http://localhost:8765/app/index.html`.
 python3 scripts/package.py
 ```
 
-This writes `dist/fileforge-chrome-<version>.zip` and `dist/fileforge-firefox-<version>.zip`. The Firefox build swaps the background service worker for an event page, moves the optional host permission to `optional_permissions`, adds the Gecko add-on id and drops the sandbox page (so HEIC conversion is web-only on Firefox).
+This writes `dist/fileforge-chrome-<version>.zip` and `dist/fileforge-firefox-<version>.zip`. The Firefox build swaps the background service worker for an event page, moves the optional host permission to `optional_permissions`, adds the Gecko add-on id, replaces Chrome's `side_panel` with `sidebar_action` and drops the sandbox page (so HEIC conversion is web-only on Firefox).
 
 ## Project layout
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+
+- **Side panel mode**: the ◨ button in the top bar or "Open in side panel" in the toolbar icon's right-click menu
+  moves FileForge into Chrome's side panel (Edge, Brave and Opera too) or Firefox's sidebar, next to the page you
+  are working on. While it is open there, "Edit image in FileForge" and "Open PDF in FileForge" load the file into
+  the panel instead of a new tab; Chrome also remembers the choice for the toolbar icon. ⧉ returns to a full tab.
+  The web version opens a small pop-up window instead.
+- A compact layout for narrow panels: the tool picker becomes a dropdown, page thumbnails shrink, and file rows,
+  selects and previews fit the panel width without horizontal scrolling.
+
 ## 0.5.0
 
 ### Added

@@ -11,6 +11,7 @@ Firefox differences applied automatically:
   - optional_permissions instead of optional_host_permissions
   - browser_specific_settings.gecko (add-on id, min version, data collection = none)
   - no "sandbox" key (Firefox does not support it; HEIC falls back to the web version)
+  - sidebar_action instead of Chrome's side_panel key and sidePanel permission
 """
 import json, pathlib, shutil, zipfile
 
@@ -65,6 +66,14 @@ firefox = dict(base)
 firefox["background"] = {"scripts": ["background.js"]}
 firefox.pop("sandbox", None)
 firefox.pop("optional_host_permissions", None)
+firefox.pop("side_panel", None)
+firefox["permissions"] = [p for p in base["permissions"] if p != "sidePanel"]
+firefox["sidebar_action"] = {
+    "default_panel": "app/index.html?view=side",
+    "default_title": "__MSG_shortName__",
+    "default_icon": "icons/icon32.png",
+    "open_at_install": False,
+}
 firefox["optional_permissions"] = ["<all_urls>"]
 firefox["browser_specific_settings"] = {
     "gecko": {

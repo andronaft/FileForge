@@ -2,12 +2,15 @@
   "manifest_version": 3,
   "name": "__MSG_name__",
   "short_name": "__MSG_shortName__",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "__MSG_description__",
   "default_locale": "en",
   "homepage_url": "https://andronaft.github.io/FileForge/",
   "action": {
     "default_title": "__MSG_actionTitle__"
+  },
+  "side_panel": {
+    "default_path": "app/index.html?view=side"
   },
   "commands": {
     "_execute_action": {
@@ -22,7 +25,8 @@
   },
   "permissions": [
     "contextMenus",
-    "scripting"
+    "scripting",
+    "sidePanel"
   ],
   "optional_host_permissions": [
     "<all_urls>"

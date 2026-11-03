@@ -57,6 +57,60 @@ try { savedTheme = localStorage.getItem("fileforge.theme"); } catch (_) { /* ign
 applyTheme(savedTheme === "dark" || savedTheme === "light" ? savedTheme : null);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (!document.documentElement.dataset.theme) applyTheme(null); });
 
+// ---------- side panel / small window ----------
+// `?view=side` marks the compact layout: the extension's side panel (Chrome) or sidebar (Firefox), or a small
+// pop-up window of the web version. The button in the top bar switches between that and a full tab.
+const ext = globalThis.browser ?? globalThis.chrome;
+const isExtension = !!ext?.runtime?.id;
+const sideView = new URLSearchParams(location.search).get("view") === "side";
+if (sideView) document.documentElement.dataset.view = "side";
+const viewBtn = document.getElementById("viewBtn");
+const canSide = isExtension ? !!(ext.sidePanel || ext.sidebarAction) : typeof window.open === "function";
+viewBtn.hidden = !canSide;
+viewBtn.textContent = sideView ? "⧉" : "◨";
+viewBtn.title = sideView ? "Open in a full tab" : isExtension ? "Open in the side panel" : "Open in a small window beside your other windows";
+viewBtn.setAttribute("aria-label", viewBtn.title);
+function viewUrl(side) {
+  const url = new URL(location.href);
+  if (side) url.searchParams.set("view", "side"); else url.searchParams.delete("view");
+  url.searchParams.delete("src"); url.searchParams.delete("note");
+  return url.toString();
+}
+async function closeThisTab() {
+  try {
+    const me = await ext.tabs.getCurrent();
+    if (me?.id != null) { await ext.tabs.remove(me.id); return; }
+  } catch (_) { /* fall through */ }
+  window.close();
+}
+viewBtn.addEventListener("click", async () => {
+  if (sideView) {
+    const url = viewUrl(false);
+    if (!isExtension) { window.open(url, "_blank"); window.close(); return; }
+    try { await ext.sidePanel?.setPanelBehavior({ openPanelOnActionClick: false }); } catch (_) { /* ignore */ }
+    await ext.tabs.create({ url });
+    if (ext.sidebarAction) { try { await ext.sidebarAction.close(); } catch (_) { /* ignore */ } } else window.close();
+    return;
+  }
+  if (!isExtension) {
+    const w = window.open(viewUrl(true), "fileforge-side", "popup,width=420,height=760");
+    if (!w) toast("The browser blocked the small window. Allow pop-ups for this site and try again.", "error");
+    return;
+  }
+  try {
+    if (ext.sidePanel) {
+      const win = await ext.windows.getCurrent();
+      await ext.sidePanel.open({ windowId: win.id });
+      await ext.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+    } else {
+      await ext.sidebarAction.open();
+    }
+    await closeThisTab();
+  } catch (_) {
+    toast("Could not open the side panel. Right-click the FileForge icon and choose “Open in side panel”.", "error");
+  }
+});
+
 function requestedToolId() {
   const hash = location.hash.replace(/^#/, "");
   if (hash) return hash;
@@ -419,7 +473,7 @@ async function loadFromSrc() {
   const src = params.get("src");
   if (params.get("note") === "embedded") toast("That image is embedded in the page and could not be read. Save it and drop it here instead.", "error");
   if (!src) return;
-  history.replaceState(null, "", location.pathname + location.hash);
+  history.replaceState(null, "", location.pathname + (sideView ? "?view=side" : "") + location.hash);
   try {
     let url = src, name = "file";
     if (src.startsWith("handoff:")) {
@@ -460,3 +514,23 @@ window.addEventListener("paste", (e) => {
 });
 mount();
 loadFromSrc();
+
+// In the side panel the background script hands over context-menu requests ("Edit image in FileForge") instead of
+// opening a tab: one waits in `pending` while the panel loads, later ones arrive as messages.
+function openRequested(req) {
+  if (!req?.tool) return;
+  const p = new URLSearchParams(req.params || {});
+  p.set("view", "side");
+  history.replaceState(null, "", `${location.pathname}?${p}#${req.tool}`);
+  state.files = [];
+  mount();
+  loadFromSrc();
+}
+if (isExtension && sideView) {
+  ext.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (msg?.type !== "fileforge-open") return;
+    openRequested(msg);
+    sendResponse(true);
+  });
+  Promise.resolve(ext.runtime.sendMessage({ type: "fileforge-pending" })).then(openRequested).catch(() => {});
+}
