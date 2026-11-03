@@ -23,12 +23,18 @@ if not CHROME:
     sys.exit("Chrome or Chromium not found")
 
 SHOTS = [  # name, title (HTML), subtitle
+    ("home", 'Every file job, done <span class="accent">on your device</span>', "42 tools for images, PDFs and text · nothing is uploaded · works offline · English and Ukrainian"),
     ("crop", 'Crop, resize, compress — <span class="accent">on your device</span>', "Drag the handles or type exact pixels · aspect-ratio presets · nothing is uploaded"),
-    ("pdf-merge", 'Merge, split and fix <span class="accent">PDFs</span>', "Put files in order, then merge · split by ranges · rotate, delete pages, add numbers or a watermark"),
+    ("pdf-merge", 'Merge, split and fix <span class="accent">PDFs</span>', "Put files in order, then merge · split, reorder, crop, N-up · stamp a signature · page numbers and watermarks"),
+    ("adjust", 'Adjust photos with a <span class="accent">live preview</span>', "Brightness, contrast, saturation, blur, sharpen · one-click looks · the same settings on every file"),
+    ("pipeline", 'Chain tools into a <span class="accent">pipeline</span>', "Resize → adjust → watermark → compress, run on every file at once · the chain is remembered"),
     ("compress", '<span class="accent">Smaller</span> photos in one click', "JPG, PNG and WebP · see the new size before you download · convert between formats"),
-    ("md-to-pdf", 'Markdown → <span class="accent">PDF</span>', "Live preview, three themes, A4 or Letter · also CSV ⇄ JSON, JSON formatting, Base64"),
+    ("md-to-pdf", 'Markdown → <span class="accent">PDF</span>', "Live preview, three themes, A4 or Letter · also Markdown → HTML, CSV ⇄ JSON, JSON formatting, Base64"),
+    ("pdf-nup", '<span class="accent">Pages per sheet</span> and more PDF tools', "2, 4, 6 or 9 pages on a sheet · crop margins · extract images · PDF → text"),
     ("pdf-to-images", 'Every page as an <span class="accent">image</span>', "PNG or JPG at 72–300 dpi · pick pages · download all as a zip"),
     ("watermark", 'Watermark with a <span class="accent">live preview</span>', "Any text, corner, centre or tiled · opacity and size · batch for many photos"),
+    ("qr", '<span class="accent">QR codes</span>, offline', "Links, Wi-Fi, e-mail, vCard as PNG or SVG · plus checksums, JWT decoder, regex tester, URL tools"),
+    ("diff", 'Text <span class="accent">diff</span> and developer tools', "Compare texts or files line by line · JSON, CSV, Base64, hashes, word count and case"),
     ("json-format", 'Text &amp; data <span class="accent">tools</span>', "Format and validate JSON with the exact error position · CSV ⇄ JSON · Base64"),
     ("favicons", '<span class="accent">Favicons</span> from one logo', "favicon.ico, every PNG size, apple-touch-icon, HTML snippet and web manifest"),
 ]

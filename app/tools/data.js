@@ -1,4 +1,4 @@
-import { el, baseName, field, select, number, checkbox, download, readAsText, plural, toast } from "../util.js";
+import { el, baseName, field, select, number, checkbox, download, readAsText, plural, toast, t } from "../util.js";
 
 // ---------- CSV helpers (RFC 4180) ----------
 
@@ -108,7 +108,7 @@ const csvJsonTool = {
     const base = u.files[0] ? baseName(u.files[0].name) : "data";
     if (isJson) {
       let data;
-      try { data = JSON.parse(text); } catch (err) { throw new Error(`Invalid JSON: ${err.message}`); }
+      try { data = JSON.parse(text); } catch (err) { throw new Error(t("Invalid JSON: {error}", { error: err.message })); }
       const csv = toCsv(data, delimiter);
       u.output.value = csv;
       return [{ name: `${base}.csv`, blob: new Blob([csv], { type: "text/csv" }), note: plural(Math.max(0, csv.split("\n").length - 2), "row") }];
@@ -235,10 +235,10 @@ const jsonFormatTool = {
       if (e) {
         const before = text.slice(0, e.pos);
         const line = before.split("\n").length, col = e.pos - before.lastIndexOf("\n");
-        u.status.textContent = `✖ Invalid JSON at line ${line}, column ${col}: ${e.message}`;
+        u.status.textContent = t("✖ Invalid JSON at line {line}, column {col}: {message}", { line, col, message: t(e.message) });
         u.input.focus(); u.input.setSelectionRange(e.pos, Math.min(e.pos + 1, text.length));
       } else {
-        u.status.textContent = `✖ Invalid JSON: ${err.message}`;
+        u.status.textContent = t("Invalid JSON: {error}", { error: err.message });
       }
       throw new Error(u.status.textContent);
     }
@@ -247,7 +247,7 @@ const jsonFormatTool = {
     const indent = u.mode.value === "tab" ? "\t" : Number(u.mode.value);
     const out = JSON.stringify(data, null, indent) + (indent ? "\n" : "");
     u.output.value = out;
-    u.status.textContent = `✔ Valid JSON · ${out.length.toLocaleString()} characters`;
+    u.status.textContent = t("✔ Valid JSON · {n} characters", { n: out.length.toLocaleString() });
     const base = u.files[0] ? baseName(u.files[0].name) : "data";
     return [{ name: `${base}${indent ? "" : ".min"}.json`, blob: new Blob([out], { type: "application/json" }) }];
   },
@@ -289,7 +289,7 @@ const base64Tool = {
     const decodeRow = el("div", { class: "row", hidden: true }, [field("Decode as", decodeAs), field("File name", decodeName)]);
     const encodeRow = el("div", { class: "row" }, [dataUrl.label]);
     mode.addEventListener("change", () => { decodeRow.hidden = mode.value !== "decode"; encodeRow.hidden = mode.value !== "encode"; });
-    const info = el("div", { class: "stat", text: files[0] ? `Encoding file: ${files[0].name}` : "" });
+    const info = el("div", { class: "stat", text: files[0] ? t("Encoding file: {name}", { name: files[0].name }) : "" });
     root.prepend(el("div", { class: "row" }, [field("Mode", mode)]), encodeRow, decodeRow, info);
     this.ui = { input, output, mode, dataUrl, decodeAs, decodeName, files };
   },
@@ -320,7 +320,7 @@ const base64Tool = {
     const m = src.match(/^data:([^;,]+)/);
     const name = u.decodeName.value.trim() || "decoded.bin";
     const blob = new Blob([bytes], { type: m ? m[1] : "application/octet-stream" });
-    u.output.value = `${bytes.length.toLocaleString()} bytes decoded → ${name}`;
+    u.output.value = t("{n} bytes decoded → {name}", { n: bytes.length.toLocaleString(), name });
     download(blob, name);
     return [{ name, blob, note: `${bytes.length.toLocaleString()} bytes` }];
   },

@@ -1,4 +1,5 @@
-import { el, field, select, download, readAsText, toast } from "../util.js";
+import { el, field, select, download, readAsText, toast, baseName, t } from "../util.js";
+import { copyButton } from "./data.js";
 
 const SAMPLE = `# FileForge
 
@@ -124,4 +125,46 @@ const mdToPdfTool = {
   },
 };
 
-export const markdownTools = [mdToPdfTool];
+const mdToHtmlTool = {
+  id: "md-to-html",
+  title: "Markdown to HTML",
+  description: "Turn Markdown into a standalone HTML page with a clean stylesheet, or just the HTML fragment to paste into a site or e-mail.",
+  keywords: ["markdown", "html", "convert", "readme", "blog"],
+  accept: ".md,.markdown,.txt,text/markdown,text/plain",
+  multiple: false,
+  filesOptional: true,
+  noAutoDownload: true,
+  hint: "Optional: drop a .md file",
+  runLabel: "Download .html",
+  text: SAMPLE,
+  renderOptions(root, files) {
+    const editor = el("textarea", { spellcheck: "false" });
+    editor.value = this.text;
+    const theme = select([["github", "GitHub style"], ["serif", "Serif / book"], ["plain", "Plain"], ["none", "No stylesheet"]], "github");
+    const mode = select([["page", "Full page (with <html>, <head>, styles)"], ["fragment", "Fragment (body HTML only)"]], "page");
+    const output = el("textarea", { readonly: true, spellcheck: "false" });
+    const preview = el("iframe", { class: "md-preview", title: "Preview", sandbox: "allow-same-origin" });
+    const of = field("HTML", output); of.append(copyButton(() => output.value, "Copy HTML"));
+    const titleOf = () => (files[0] ? baseName(files[0].name) : (editor.value.match(/^#\s+(.+)$/m)?.[1] || "document"));
+    const build = () => {
+      this.text = editor.value;
+      const body = marked.parse(editor.value, { gfm: true, breaks: false });
+      const html = mode.value === "fragment" ? body : theme.value === "none" ? `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<title>${escapeHtml(titleOf())}</title>\n</head>\n<body>\n${body}\n</body>\n</html>` : buildHtml(editor.value, theme.value, "A4", titleOf());
+      output.value = html;
+      preview.srcdoc = mode.value === "fragment" || theme.value === "none" ? buildHtml(editor.value, theme.value === "none" ? "plain" : theme.value, "A4", titleOf()) : html;
+    };
+    let timer;
+    editor.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(build, 200); });
+    theme.addEventListener("change", build); mode.addEventListener("change", build);
+    root.append(el("div", { class: "row" }, [field("Style", theme), field("Output", mode)]), el("div", { class: "md-grid" }, [field("Markdown", editor), field("Preview", preview)]), of);
+    this.ui = { output, titleOf };
+    if (files[0]) readAsText(files[0]).then((x) => { editor.value = x; build(); }).catch((err) => toast(err.message, "error")); else build();
+  },
+  async run() {
+    const { output, titleOf } = this.ui;
+    if (!output.value.trim()) throw new Error(t("Write some Markdown first"));
+    return [{ name: `${titleOf()}.html`, blob: new Blob([output.value], { type: "text/html" }), note: `${output.value.length.toLocaleString()} chars` }];
+  },
+};
+
+export const markdownTools = [mdToPdfTool, mdToHtmlTool];

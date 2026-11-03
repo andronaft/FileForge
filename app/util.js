@@ -1,17 +1,22 @@
 // Shared helpers for FileForge tools.
+import { t, plural } from "./i18n.js";
+export { t, plural };
+
+// Attributes whose values are user-visible text and therefore translated.
+const TEXT_ATTRS = new Set(["title", "placeholder", "aria-label"]);
 
 export function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
     if (k === "class") node.className = v;
-    else if (k === "text") node.textContent = v;
+    else if (k === "text") node.textContent = t(v);
     else if (k.startsWith("on") && typeof v === "function") node.addEventListener(k.slice(2), v);
     else if (v === true) node.setAttribute(k, "");
-    else if (v !== false && v != null) node.setAttribute(k, v);
+    else if (v !== false && v != null) node.setAttribute(k, TEXT_ATTRS.has(k) ? t(v) : v);
   }
   for (const c of [].concat(children)) {
     if (c == null) continue;
-    node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+    node.append(c instanceof Node ? c : document.createTextNode(typeof c === "string" ? t(c) : String(c)));
   }
   return node;
 }
@@ -22,11 +27,6 @@ export function formatBytes(n) {
   let i = 0;
   while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
   return `${n < 10 && i > 0 ? n.toFixed(2) : n < 100 && i > 0 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
-}
-
-/** "1 page", "3 pages"; pass the plural form when it is not just +s. */
-export function plural(n, word, words) {
-  return `${n} ${n === 1 ? word : words || word + "s"}`;
 }
 
 const TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", jfif: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", bmp: "image/bmp", svg: "image/svg+xml", avif: "image/avif", ico: "image/x-icon", tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", heif: "image/heif", pdf: "application/pdf", md: "text/markdown", markdown: "text/markdown", txt: "text/plain", csv: "text/csv", tsv: "text/tab-separated-values", json: "application/json", html: "text/html" };
@@ -73,7 +73,7 @@ export async function zipFiles(files) {
 let toastTimer;
 export function toast(message, kind = "info") {
   const box = document.getElementById("toast");
-  box.textContent = message;
+  box.textContent = t(message);
   box.className = `toast toast-${kind}`;
   box.hidden = false;
   clearTimeout(toastTimer);
@@ -93,14 +93,14 @@ export function readAsText(file) {
 export function parseRanges(text, total) {
   const out = new Set();
   const parts = String(text).split(/[,\s]+/).filter(Boolean);
-  if (!parts.length) throw new Error("Enter at least one page or range, e.g. 1-3, 5");
+  if (!parts.length) throw new Error(t("Enter at least one page or range, e.g. 1-3, 5"));
   for (const part of parts) {
     const m = part.match(/^(\d+)(?:-(\d+))?$/);
-    if (!m) throw new Error(`Cannot understand "${part}". Use numbers and ranges like 1-3, 5`);
+    if (!m) throw new Error(t("Cannot understand \"{part}\". Use numbers and ranges like 1-3, 5", { part }));
     let a = Number(m[1]);
     let b = m[2] ? Number(m[2]) : a;
     if (a > b) [a, b] = [b, a];
-    if (a < 1 || b > total) throw new Error(`Page ${a > total ? a : b} is out of range (document has ${plural(total, "page")})`);
+    if (a < 1 || b > total) throw new Error(t("Page {page} is out of range (document has {pages})", { page: a > total ? a : b, pages: plural(total, "page") }));
     for (let p = a; p <= b; p++) out.add(p - 1);
   }
   return [...out].sort((x, y) => x - y);
@@ -108,7 +108,7 @@ export function parseRanges(text, total) {
 
 export function field(labelText, input, hint) {
   return el("label", { class: "field" }, [
-    el("span", { class: "field-label", text: labelText }),
+    el("span", { class: "field-label", text: labelText, "data-key": labelText }),
     input,
     hint ? el("span", { class: "field-hint", text: hint }) : null,
   ]);
@@ -126,5 +126,5 @@ export function number(value, attrs = {}) {
 
 export function checkbox(labelText, checked = false, attrs = {}) {
   const input = el("input", { type: "checkbox", checked, ...attrs });
-  return { input, label: el("label", { class: "check" }, [input, el("span", { text: labelText })]) };
+  return { input, label: el("label", { class: "check" }, [input, el("span", { text: labelText, "data-key": labelText })]) };
 }

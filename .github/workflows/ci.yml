@@ -17,7 +17,7 @@ jobs:
       - name: Check that manifest.json is valid JSON and every script parses
         run: |
           python3 -c "import json; json.load(open('manifest.json'))"
-          for f in background.js app/*.js app/tools/*.js scripts/*.mjs; do node --check "$f"; done
+          for f in background.js app/*.js app/tools/*.js app/i18n/*.js; do node --check "$f"; done
       - run: python3 scripts/package.py
       - name: The checks addons.mozilla.org runs on upload
         run: npx --yes web-ext@10 lint --source-dir dist/firefox

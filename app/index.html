@@ -7,6 +7,7 @@
   <title>FileForge</title>
   <meta name="description" content="Crop, resize, compress and convert images (incl. HEIC), merge and split PDFs, Markdown to PDF, CSV/JSON tools. Everything runs on your device, nothing is uploaded.">
   <meta name="theme-color" content="#1e222c">
+  <meta name="fileforge-version" content="1.0.0">
   <meta property="og:title" content="FileForge: image, PDF & file tools">
   <meta property="og:description" content="Crop, resize, compress and convert images, merge and split PDFs, Markdown to PDF. 100% on your device.">
   <meta property="og:image" content="https://andronaft.github.io/FileForge/docs/store/promo-marquee-1400x560.jpg">
@@ -17,19 +18,45 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#main">Skip to the tool</a>
+  <a class="skip-link" href="#main" data-i18n="Skip to the tool">Skip to the tool</a>
   <header class="topbar">
-    <a class="brand" href="#"><img src="../icons/icon32.png" alt="" width="24" height="24"><span>FileForge</span></a>
-    <span class="tagline">Images · PDF · Markdown — everything runs on your device, nothing is uploaded</span>
+    <a class="brand" href="#" title="All tools"><img src="../icons/icon32.png" alt="" width="24" height="24"><span>FileForge</span></a>
+    <button id="searchBtn" class="search-btn" type="button" aria-label="Find a tool"><span class="search-text" data-i18n="Find a tool…">Find a tool…</span><kbd>⌘K</kbd></button>
     <select id="navSelect" class="nav-select" aria-label="Tool"></select>
-    <button id="viewBtn" class="icon view" type="button" aria-label="Open in the side panel">◨</button>
-    <button id="themeBtn" class="icon theme" type="button" aria-label="Toggle dark theme">🌙</button>
+    <span class="topbar-spacer"></span>
+    <button id="viewBtn" class="icon view" type="button" aria-label="Open in the side panel"></button>
+    <button id="themeBtn" class="icon theme" type="button" aria-label="Toggle dark theme"></button>
+    <button id="settingsBtn" class="icon settings-btn" type="button" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
   </header>
   <div class="layout">
-    <nav class="sidebar" id="nav" aria-label="Tools"></nav>
+    <nav class="sidebar" id="nav" aria-label="Tools">
+      <a class="nav-item nav-home" href="#"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg><span data-i18n="All tools">All tools</span></a>
+      <input id="navFilter" class="nav-filter" type="search" placeholder="Filter tools… ( / )" data-i18n-placeholder="Filter tools… ( / )" aria-label="Filter tools" autocomplete="off">
+      <div id="navList"></div>
+    </nav>
     <main class="main" id="main"></main>
   </div>
+  <div id="dropOverlay" class="drop-overlay" hidden><div class="drop-overlay-box" data-i18n="Drop files to open them">Drop files to open them</div></div>
   <div id="toast" class="toast" role="status" aria-live="assertive" hidden></div>
+
+  <dialog id="palette" class="dialog palette" aria-label="Find a tool">
+    <input id="paletteInput" type="text" placeholder="Type to search: crop, merge, json…" data-i18n-placeholder="Type to search: crop, merge, json…" aria-label="Search tools" autocomplete="off">
+    <div id="paletteList" class="palette-list" role="listbox"></div>
+    <div class="palette-foot"><kbd>↑↓</kbd> <span data-i18n="navigate">navigate</span> <kbd>Enter</kbd> <span data-i18n="open">open</span> <kbd>Esc</kbd> <span data-i18n="close">close</span></div>
+  </dialog>
+  <dialog id="settings" class="dialog">
+    <div class="dialog-head"><h2 data-i18n="Settings">Settings</h2><button type="button" class="icon dialog-close" aria-label="Close">✕</button></div>
+    <div class="dialog-body"></div>
+  </dialog>
+  <dialog id="shortcuts" class="dialog">
+    <div class="dialog-head"><h2 data-i18n="Keyboard shortcuts">Keyboard shortcuts</h2><button type="button" class="icon dialog-close" aria-label="Close">✕</button></div>
+    <div class="dialog-body"></div>
+  </dialog>
+  <dialog id="lightbox" class="dialog lightbox">
+    <div class="dialog-head"><h2></h2><button type="button" class="icon dialog-close" aria-label="Close">✕</button></div>
+    <div class="dialog-body"></div>
+  </dialog>
+
   <script src="../vendor/jszip.min.js"></script>
   <script src="../vendor/pdf-lib.min.js"></script>
   <script src="../vendor/marked.min.js"></script>

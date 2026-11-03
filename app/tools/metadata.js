@@ -1,5 +1,5 @@
 // Remove metadata (EXIF, GPS, XMP, IPTC, comments) from JPEG, PNG and WebP without re-encoding the pixels.
-import { el, formatBytes, baseName, plural } from "../util.js";
+import { el, formatBytes, baseName, plural, t } from "../util.js";
 
 const u16 = (b, i) => (b[i] << 8) | b[i + 1];
 const u32le = (b, i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
@@ -203,7 +203,7 @@ export const metadataTool = {
   hint: "JPG, PNG, WebP — multiple files allowed",
   runLabel: "Remove metadata",
   renderOptions(root, files) {
-    root.append(el("div", { class: "stat", text: `${plural(files.length, "file")}. Colour profiles are kept so the colours stay the same.` }));
+    root.append(el("div", { class: "stat", text: t("{files}. Colour profiles are kept so the colours stay the same.", { files: plural(files.length, "file") }) }));
     const box = el("div", { class: "options" });
     root.append(box);
     (async () => {
@@ -213,7 +213,7 @@ export const metadataTool = {
         const table = el("table", { class: "meta" }, rows.map(([k, v, href]) => el("tr", {}, [el("th", { text: k }), el("td", {}, [href ? el("a", { href, target: "_blank", rel: "noopener", text: v }) : v])])));
         box.append(el("div", {}, [el("div", { class: "stat", text: file.name }), rows.length ? table : el("div", { class: "stat", text: "No EXIF data." })]));
       }
-      if (files.length > 5) box.append(el("div", { class: "stat", text: `… and ${files.length - 5} more` }));
+      if (files.length > 5) box.append(el("div", { class: "stat", text: t("… and {n} more", { n: files.length - 5 }) }));
     })();
   },
   async run(files, _root, progress) {
@@ -225,13 +225,13 @@ export const metadataTool = {
       if (b[0] === 0xff && b[1] === 0xd8) r = cleanJpeg(b);
       else if (b[0] === 0x89 && b[1] === 0x50) r = cleanPng(b);
       else if (b[0] === 0x52 && b[8] === 0x57) r = cleanWebp(b);
-      else throw new Error(`${file.name}: not a JPEG, PNG or WebP file`);
+      else throw new Error(t("{name}: not a JPEG, PNG or WebP file", { name: file.name }));
       const blob = new Blob(r.parts, { type: file.type });
       const removed = file.size - blob.size;
       const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
       out.push({
         name: `${baseName(file.name)}-clean${ext}`, blob,
-        note: r.kinds.size ? `removed ${[...r.kinds].join(", ")} (${formatBytes(removed)})` : "no metadata found",
+        note: r.kinds.size ? t("removed {kinds} ({size})", { kinds: [...r.kinds].join(", "), size: formatBytes(removed) }) : t("no metadata found"),
       });
     }
     return out;

@@ -1,4 +1,4 @@
-import { el, baseName, field, select, number, checkbox, parseRanges, formatBytes, plural, toast } from "../util.js";
+import { el, baseName, field, select, number, checkbox, parseRanges, formatBytes, plural, toast, t } from "../util.js";
 import * as pdfjsLib from "../../vendor/pdf.min.mjs";
 import { copyButton } from "./data.js";
 
@@ -115,7 +115,7 @@ async function pagePicker(root, file, input) {
   const tiles = pageTiles(doc, grid, Array.from({ length: total }, (_, i) => i));
   let selected = new Set();
   let last = null;
-  const paint = () => { tiles.forEach((t, i) => { t.classList.toggle("on", selected.has(i)); t.setAttribute("aria-pressed", selected.has(i) ? "true" : "false"); }); hint.textContent = selected.size ? `${plural(selected.size, "page")} selected · click to toggle, shift-click for a range` : "Click pages to select them, or type ranges above"; };
+  const paint = () => { tiles.forEach((t, i) => { t.classList.toggle("on", selected.has(i)); t.setAttribute("aria-pressed", selected.has(i) ? "true" : "false"); }); hint.textContent = selected.size ? t("{pages} selected · click to toggle, shift-click for a range", { pages: plural(selected.size, "page") }) : t("Click pages to select them, or type ranges above"); };
   const fromInput = () => { try { selected = new Set(input.value.trim() ? parseRanges(input.value, total) : []); } catch (_) { selected = new Set(); } paint(); };
   input.addEventListener("input", fromInput);
   tiles.forEach((t, i) => t.addEventListener("click", (e) => {
@@ -194,7 +194,7 @@ const mergeTool = {
     const info = el("div", { class: "stat", text: "Counting pages…" });
     root.append(info);
     Promise.all(files.map(pageCount))
-      .then((counts) => { info.textContent = `${plural(files.length, "file")}, ${plural(counts.reduce((a, b) => a + b, 0), "page")} in total`; })
+      .then((counts) => { info.textContent = t("{files}, {pages} in total", { files: plural(files.length, "file"), pages: plural(counts.reduce((a, b) => a + b, 0), "page") }); })
       .catch((err) => { info.textContent = err.message; });
   },
   async run(files, _root, progress) {
@@ -286,7 +286,7 @@ const rotatePdfTool = {
     const picker = el("div", { hidden: true });
     which.addEventListener("change", () => { rangesField.hidden = which.value !== "ranges"; picker.hidden = which.value !== "ranges"; });
     root.append(el("div", { class: "row" }, [field("Rotation", angle), field("Apply to", which), rangesField]), picker);
-    if (files.length > 1) picker.append(el("div", { class: "stat", text: `Pages of ${files[0].name}; the same page numbers are rotated in every file.` }));
+    if (files.length > 1) picker.append(el("div", { class: "stat", text: t("Pages of {name}; the same page numbers are rotated in every file.", { name: files[0].name }) }));
     closeDocs(); pagePicker(picker, files[0], ranges);
     this.opts = { angle, which, ranges };
   },
@@ -460,7 +460,7 @@ const compressPdfTool = {
     root.append(
       el("div", { class: "row" }, [field("Mode", mode)]),
       renderRow,
-      el("div", { class: "stat", text: `${plural(files.length, "file")}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
+      el("div", { class: "stat", text: t("{files}, {size} total", { files: plural(files.length, "file"), size: formatBytes(files.reduce((s, f) => s + f.size, 0)) }) }),
     );
     this.opts = { mode, dpi, quality, gray };
   },
@@ -493,7 +493,7 @@ const compressPdfTool = {
       const blob = pdfBlob(await doc.save());
       if (blob.size >= file.size) {
         // Text and vector PDFs are already compact; rasterising them only makes them bigger (and the text unselectable).
-        out.push({ name: file.name, blob: file, note: `kept as is: re-rendering would make it ${(blob.size / file.size).toFixed(1)}× bigger` });
+        out.push({ name: file.name, blob: file, note: t("kept as is: re-rendering would make it {k}× bigger", { k: (blob.size / file.size).toFixed(1) }) });
         continue;
       }
       out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)})` });
@@ -557,7 +557,7 @@ const reorderTool = {
       grid.replaceChildren(...st.order.map((i) => tiles.get(i)));
       st.order.forEach((i, pos) => { const t = tiles.get(i); t.classList.toggle("removed", st.removed.has(i)); t.querySelector(".page-n").textContent = st.removed.has(i) ? `was ${i + 1}` : `${pos + 1} (was ${i + 1})`; });
       const kept = st.order.filter((i) => !st.removed.has(i)).length;
-      info.textContent = `${plural(kept, "page")} kept of ${st.total}. Drag to reorder, ✕ to drop a page.`;
+      info.textContent = t("{pages} kept of {total}. Drag to reorder, ✕ to drop a page.", { pages: plural(kept, "page"), total: st.total });
     };
     closeDocs();
     openDoc(files[0]).then((doc) => {
@@ -739,7 +739,7 @@ const pdfMetadataTool = {
         const table = el("table", { class: "meta" }, rows.map(([k, v]) => el("tr", {}, [el("th", { text: k }), el("td", { text: v })])));
         blocks.push(el("div", {}, [el("div", { class: "stat", text: file.name }), rows.length ? table : el("div", { class: "stat", text: "No metadata found." })]));
       }
-      if (files.length > 5) blocks.push(el("div", { class: "stat", text: `… and ${files.length - 5} more` }));
+      if (files.length > 5) blocks.push(el("div", { class: "stat", text: t("… and {n} more", { n: files.length - 5 }) }));
       box.replaceWith(el("div", { class: "options" }, blocks));
     })();
   },
@@ -820,7 +820,7 @@ const pdfToTextTool = {
       } finally { await doc.destroy(); }
       const text = pages.join(o.format.value === "md" ? "\n\n" : "\n\n----\n\n") + "\n";
       const ext = o.format.value === "md" ? "md" : "txt";
-      out.push({ name: `${baseName(file.name)}.${ext}`, blob: new Blob([text], { type: ext === "md" ? "text/markdown" : "text/plain" }), note: chars ? `${plural(doc.numPages, "page")}, ${chars.toLocaleString()} characters` : "no text layer (scanned?)" });
+      out.push({ name: `${baseName(file.name)}.${ext}`, blob: new Blob([text], { type: ext === "md" ? "text/markdown" : "text/plain" }), note: chars ? t("{pages}, {n} characters", { pages: plural(doc.numPages, "page"), n: chars.toLocaleString() }) : t("no text layer (scanned?)") });
       if (!preview) preview = text;
     }
     o.output.value = preview.length > 200_000 ? preview.slice(0, 200_000) + "\n…(preview cut, download for the full text)" : preview;
@@ -828,4 +828,263 @@ const pdfToTextTool = {
   },
 };
 
-export const pdfTools = [mergeTool, splitTool, reorderTool, rotatePdfTool, deletePagesTool, pageNumbersTool, watermarkPdfTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, pdfToTextTool];
+// ---------- crop pages ----------
+
+const MM = 72 / 25.4;
+
+/** Bounding box of non-white pixels in a rendered page, in canvas pixels, or null for a blank page. */
+function inkBox(canvas, threshold = 235) {
+  const { width: w, height: h } = canvas;
+  const d = canvas.getContext("2d").getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    if (d[i] < threshold || d[i + 1] < threshold || d[i + 2] < threshold) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  }
+  return x1 < 0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 };
+}
+
+const cropPdfTool = {
+  id: "pdf-crop",
+  title: "Crop PDF pages",
+  description: "Trim margins from every page by exact millimetres, or let FileForge find the printed area and cut away the white space automatically.",
+  keywords: ["margins", "trim", "whitespace", "cropbox", "cut"],
+  accept: "application/pdf,.pdf",
+  hint: "One or more PDF files",
+  runLabel: "Crop pages",
+  renderOptions(root, files) {
+    const mode = select([["auto", "Auto: trim white margins"], ["manual", "Manual: cut this much from each edge"]], "auto");
+    const pad = number(5, { min: 0, max: 50 });
+    const top = number(10, { min: 0 }), right = number(10, { min: 0 }), bottom = number(10, { min: 0 }), left = number(10, { min: 0 });
+    const which = select([["all", "All pages"], ["ranges", "Only these pages"]], "all");
+    const ranges = el("input", { type: "text", placeholder: "1, 3-5" });
+    const rangesField = field("Pages", ranges); rangesField.hidden = true;
+    const autoRow = el("div", { class: "row" }, [field("Keep around the content (mm)", pad)]);
+    const manualRow = el("div", { class: "row", hidden: true }, [field("Top (mm)", top), field("Right (mm)", right), field("Bottom (mm)", bottom), field("Left (mm)", left)]);
+    mode.addEventListener("change", () => { autoRow.hidden = mode.value !== "auto"; manualRow.hidden = mode.value !== "manual"; });
+    const picker = el("div", { hidden: true });
+    which.addEventListener("change", () => { rangesField.hidden = picker.hidden = which.value !== "ranges"; });
+    root.append(el("div", { class: "row" }, [field("Mode", mode), field("Apply to", which), rangesField]), autoRow, manualRow, picker);
+    if (files.length === 1) { closeDocs(); pagePicker(picker, files[0], ranges); }
+    this.opts = { mode, pad, top, right, bottom, left, which, ranges };
+  },
+  async run(files, _root, progress) {
+    const o = this.opts, out = [];
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const doc = await loadPdf(file);
+      const total = doc.getPageCount();
+      const indices = o.which.value === "all" ? Array.from({ length: total }, (_, i) => i) : parseRanges(o.ranges.value, total);
+      let cropped = 0;
+      if (o.mode.value === "manual") {
+        for (const i of indices) {
+          const page = doc.getPage(i);
+          const { x, y, width, height } = page.getMediaBox();
+          const l = Number(o.left.value) * MM, r = Number(o.right.value) * MM, tp = Number(o.top.value) * MM, b = Number(o.bottom.value) * MM;
+          if (l + r >= width || tp + b >= height) throw new Error(t("The margins are larger than the page"));
+          page.setCropBox(x + l, y + b, width - l - r, height - tp - b);
+          cropped++;
+        }
+      } else {
+        const boxes = new Map();
+        const scale = 0.5;
+        await renderPages(file, scale, indices, async (canvas, n, wPt, hPt) => { boxes.set(n - 1, { box: inkBox(canvas), wPt, hPt, cw: canvas.width, ch: canvas.height }); }, null);
+        const padPt = Number(o.pad.value) * MM;
+        for (const i of indices) {
+          const info = boxes.get(i);
+          if (!info?.box) continue;
+          const page = doc.getPage(i);
+          const { x: mx, y: my, width, height } = page.getMediaBox();
+          const kx = width / info.cw, ky = height / info.ch;
+          const x0 = Math.max(0, info.box.x0 * kx - padPt), x1 = Math.min(width, info.box.x1 * kx + padPt);
+          const yTop = Math.max(0, info.box.y0 * ky - padPt), yBottom = Math.min(height, info.box.y1 * ky + padPt);
+          // pdf.js renders top-down; PDF boxes are measured from the bottom-left corner.
+          page.setCropBox(mx + x0, my + height - yBottom, x1 - x0, yBottom - yTop);
+          cropped++;
+        }
+      }
+      out.push({ name: `${baseName(file.name)}-cropped.pdf`, blob: pdfBlob(await doc.save()), note: t("{n} of {total} pages cropped", { n: cropped, total }) });
+    }
+    return out;
+  },
+};
+
+// ---------- n-up / page size ----------
+
+const nupTool = {
+  id: "pdf-nup",
+  title: "Pages per sheet",
+  description: "Put 2, 4, 6 or more pages on one sheet for printing or review, or set 1 per sheet to re-flow odd-sized pages onto A4 or Letter.",
+  keywords: ["n-up", "2-up", "4-up", "handout", "print", "page size", "a4", "letter", "booklet"],
+  accept: "application/pdf,.pdf",
+  hint: "One or more PDF files",
+  runLabel: "Build sheets",
+  renderOptions(root) {
+    const per = select([["1", "1 per sheet (resize pages)"], ["2", "2 per sheet"], ["4", "4 per sheet"], ["6", "6 per sheet"], ["9", "9 per sheet"], ["16", "16 per sheet"]], "2");
+    const sheet = select([["a4", "A4"], ["letter", "Letter"], ["a3", "A3"]], "a4");
+    const orient = select([["auto", "Auto"], ["portrait", "Portrait"], ["landscape", "Landscape"]], "auto");
+    const margin = number(10, { min: 0, max: 50 }), gap = number(5, { min: 0, max: 50 });
+    const borders = checkbox("Thin border around each page", true);
+    root.append(el("div", { class: "row" }, [field("Pages per sheet", per), field("Sheet size", sheet), field("Orientation", orient), field("Margin (mm)", margin), field("Gap (mm)", gap), borders.label]));
+    this.opts = { per, sheet, orient, margin, gap, borders };
+  },
+  async run(files, _root, progress) {
+    const o = this.opts, out = [];
+    const n = Number(o.per.value);
+    const cols = { 1: 1, 2: 2, 4: 2, 6: 3, 9: 3, 16: 4 }[n], rows = n / cols;
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const src = await loadPdf(file);
+      const doc = await PDFDocument.create();
+      const srcBytes = await src.save();
+      const indices = Array.from({ length: src.getPageCount() }, (_, i) => i);
+      const embedded = await doc.embedPdf(srcBytes, indices);
+      let base = o.sheet.value === "letter" ? PageSizes.Letter : o.sheet.value === "a3" ? PageSizes.A3 : PageSizes.A4;
+      const first = src.getPage(0).getSize();
+      const landscape = o.orient.value === "landscape" || (o.orient.value === "auto" && ((n === 2 && first.width <= first.height) || (n === 1 && first.width > first.height) || (n === 6 && first.width > first.height)));
+      const [sw, sh] = landscape ? [base[1], base[0]] : base;
+      const m = Number(o.margin.value) * MM, g = Number(o.gap.value) * MM;
+      const cw = (sw - 2 * m - (cols - 1) * g) / cols, ch = (sh - 2 * m - (rows - 1) * g) / rows;
+      for (let k = 0; k < embedded.length; k += n) {
+        const page = doc.addPage([sw, sh]);
+        for (let j = 0; j < n && k + j < embedded.length; j++) {
+          const ep = embedded[k + j];
+          const col = j % cols, row = Math.floor(j / cols);
+          const scale = Math.min(cw / ep.width, ch / ep.height);
+          const w = ep.width * scale, h = ep.height * scale;
+          const x = m + col * (cw + g) + (cw - w) / 2, y = sh - m - (row + 1) * ch - row * g + (ch - h) / 2;
+          page.drawPage(ep, { x, y, width: w, height: h });
+          if (o.borders.input.checked && n > 1) page.drawRectangle({ x, y, width: w, height: h, borderColor: rgb(0.6, 0.6, 0.6), borderWidth: 0.5 });
+        }
+      }
+      out.push({ name: `${baseName(file.name)}-${n}up.pdf`, blob: pdfBlob(await doc.save()), note: t("{sheets} sheets from {pages} pages", { sheets: doc.getPageCount(), pages: embedded.length }) });
+    }
+    return out;
+  },
+};
+
+// ---------- stamp image / signature ----------
+
+const POSITIONS = ["top-left", "top-center", "top-right", "middle-left", "middle-center", "middle-right", "bottom-left", "bottom-center", "bottom-right"];
+
+const stampTool = {
+  id: "pdf-stamp",
+  title: "Stamp image or signature",
+  description: "Place a PNG or JPG (a signature, logo or “PAID” stamp) on every page, the first page, the last page or a range: pick a corner, size and opacity.",
+  keywords: ["signature", "sign", "logo", "stamp", "overlay", "image on pdf"],
+  accept: "application/pdf,.pdf,image/png,image/jpeg,image/webp",
+  hint: "Drop the PDF(s) and the image to stamp together; the image can be a transparent PNG",
+  runLabel: "Stamp",
+  renderOptions(root, files) {
+    const pdfs = files.filter((f) => f.type === "application/pdf"), images = files.filter((f) => f.type.startsWith("image/"));
+    const info = el("div", { class: "stat", text: !images.length ? t("Add the image to stamp (PNG with transparency works best)") : !pdfs.length ? t("Add at least one PDF") : t("{image} onto {n}", { image: images[0].name, n: plural(pdfs.length, "PDF") }) });
+    const pos = el("div", { class: "pos-grid", role: "group", "aria-label": "Position" });
+    let position = this.position || "bottom-right";
+    const buttons = POSITIONS.map((p) => el("button", { type: "button", class: p === position ? "on" : "", title: p, "aria-label": p, onclick: () => { position = p; this.position = p; buttons.forEach((b, i) => b.classList.toggle("on", POSITIONS[i] === p)); } }, [el("span", { text: "•" })]));
+    pos.append(...buttons);
+    const size = number(20, { min: 1, max: 100 }), opacity = el("input", { type: "range", min: 5, max: 100, value: 100 }), oLabel = el("span", { class: "stat", text: "100%" });
+    opacity.addEventListener("input", () => { oLabel.textContent = `${opacity.value}%`; });
+    const margin = number(10, { min: 0, max: 100 });
+    const which = select([["all", "All pages"], ["first", "First page"], ["last", "Last page"], ["ranges", "Only these pages"]], "all");
+    const ranges = el("input", { type: "text", placeholder: "1, 3-5" });
+    const rangesField = field("Pages", ranges); rangesField.hidden = true;
+    which.addEventListener("change", () => { rangesField.hidden = which.value !== "ranges"; });
+    root.append(info, el("div", { class: "row" }, [field("Position", pos), field("Width (% of page)", size), field("Opacity", el("div", { class: "row" }, [opacity, oLabel])), field("Margin (mm)", margin), field("Apply to", which), rangesField]));
+    this.opts = { size, opacity, margin, which, ranges, get position() { return position; } };
+  },
+  async run(files, _root, progress) {
+    const o = this.opts;
+    const pdfs = files.filter((f) => f.type === "application/pdf"), image = files.find((f) => f.type.startsWith("image/"));
+    if (!image) throw new Error(t("Add the image to stamp (PNG with transparency works best)"));
+    if (!pdfs.length) throw new Error(t("Add at least one PDF"));
+    const out = [];
+    for (const file of pdfs) {
+      await progress?.tick(file.name);
+      const doc = await loadPdf(file);
+      const bytes = image.type === "image/png" ? await image.arrayBuffer() : image.type === "image/jpeg" && jpegOrientation(new Uint8Array(await image.arrayBuffer())) === 1 ? await image.arrayBuffer() : await reencode(image, "image/png");
+      const img = image.type === "image/jpeg" && jpegOrientation(new Uint8Array(await image.arrayBuffer())) === 1 ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
+      const total = doc.getPageCount();
+      const indices = o.which.value === "all" ? Array.from({ length: total }, (_, i) => i) : o.which.value === "first" ? [0] : o.which.value === "last" ? [total - 1] : parseRanges(o.ranges.value, total);
+      const [v, h] = o.position.split("-");
+      for (const i of indices) {
+        const page = doc.getPage(i);
+        const { width, height } = page.getSize();
+        const w = (width * Number(o.size.value)) / 100, hh = (w * img.height) / img.width, m = Number(o.margin.value) * MM;
+        const x = h === "left" ? m : h === "center" ? (width - w) / 2 : width - w - m;
+        const y = v === "bottom" ? m : v === "middle" ? (height - hh) / 2 : height - hh - m;
+        page.drawImage(img, { x, y, width: w, height: hh, opacity: Number(o.opacity.value) / 100 });
+      }
+      out.push({ name: `${baseName(file.name)}-stamped.pdf`, blob: pdfBlob(await doc.save()), note: t("{n} of {total} pages stamped", { n: indices.length, total }) });
+    }
+    return out;
+  },
+};
+
+// ---------- extract images ----------
+
+function imageDataToCanvas(img) {
+  const c = document.createElement("canvas");
+  c.width = img.width; c.height = img.height;
+  const ctx = c.getContext("2d");
+  if (img.bitmap) { ctx.drawImage(img.bitmap, 0, 0); return c; }
+  const out = ctx.createImageData(img.width, img.height);
+  const d = out.data, s = img.data, n = img.width * img.height;
+  if (img.kind === 3) d.set(s.subarray(0, n * 4));
+  else if (img.kind === 2) for (let i = 0; i < n; i++) { d[i * 4] = s[i * 3]; d[i * 4 + 1] = s[i * 3 + 1]; d[i * 4 + 2] = s[i * 3 + 2]; d[i * 4 + 3] = 255; }
+  else { const rowBytes = Math.ceil(img.width / 8); for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) { const bit = (s[y * rowBytes + (x >> 3)] >> (7 - (x & 7))) & 1; const i = (y * img.width + x) * 4; d[i] = d[i + 1] = d[i + 2] = bit ? 255 : 0; d[i + 3] = 255; } }
+  ctx.putImageData(out, 0, 0);
+  return c;
+}
+
+const extractImagesTool = {
+  id: "pdf-extract-images",
+  title: "Extract images from PDF",
+  description: "Pull the pictures embedded in a PDF out as PNG or JPG files at their original resolution, instead of rendering whole pages.",
+  keywords: ["photos", "pictures", "embedded", "export images", "figures"],
+  accept: "application/pdf,.pdf",
+  multiple: false,
+  hint: "One PDF file",
+  runLabel: "Extract images",
+  renderOptions(root, files) {
+    const format = select([["png", "PNG (lossless)"], ["jpeg", "JPEG"]], "png");
+    const minSize = number(64, { min: 1 }), dedupe = checkbox("Skip repeated images (logos, backgrounds)", true);
+    const info = el("div", { class: "stat", text: "Counting pages…" });
+    root.append(el("div", { class: "row" }, [field("Format", format), field("Skip images smaller than (px)", minSize), dedupe.label]), info);
+    pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; }).catch((err) => { info.textContent = err.message; });
+    this.opts = { format, minSize, dedupe };
+  },
+  async run(files, _root, progress) {
+    const o = this.opts, file = files[0];
+    const data = new Uint8Array(await file.arrayBuffer());
+    const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+    const out = [], seen = new Set();
+    const mime = o.format.value === "png" ? "image/png" : "image/jpeg", ext = o.format.value === "png" ? "png" : "jpg";
+    const min = Number(o.minSize.value) || 1;
+    try {
+      progress?.start(doc.numPages);
+      for (let n = 1; n <= doc.numPages; n++) {
+        await progress?.tick(`page ${n}`);
+        const page = await doc.getPage(n);
+        const ops = await page.getOperatorList();
+        let k = 0;
+        for (let i = 0; i < ops.fnArray.length; i++) {
+          if (ops.fnArray[i] !== pdfjsLib.OPS.paintImageXObject && ops.fnArray[i] !== pdfjsLib.OPS.paintImageXObjectRepeat) continue;
+          const name = ops.argsArray[i][0];
+          if (o.dedupe.input.checked && seen.has(name)) continue;
+          seen.add(name);
+          let img;
+          try { img = await new Promise((res, rej) => { const timer = setTimeout(() => rej(new Error("timeout")), 10000); (name.startsWith("g_") ? doc.commonObjs : page.objs).get(name, (v) => { clearTimeout(timer); res(v); }); }); } catch (_) { continue; }
+          if (!img || Math.max(img.width, img.height) < min) continue;
+          const c = imageDataToCanvas(img);
+          k++;
+          out.push({ name: `${baseName(file.name)}-p${n}-${k}.${ext}`, blob: await toBlob(c, mime, 0.92), note: `${c.width} × ${c.height}` });
+        }
+        page.cleanup();
+      }
+    } finally { await doc.destroy(); }
+    if (!out.length) throw new Error(t("No embedded images found (scans drawn as a single page image count, but vector graphics do not)"));
+    return out;
+  },
+};
+
+export const pdfTools = [mergeTool, splitTool, reorderTool, rotatePdfTool, deletePagesTool, cropPdfTool, nupTool, pageNumbersTool, watermarkPdfTool, stampTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, extractImagesTool, pdfToTextTool];

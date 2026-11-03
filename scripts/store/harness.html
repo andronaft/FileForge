@@ -93,26 +93,50 @@ function textarea(text, i = 0) {
 }
 
 const SHOTS = {
+  async home() { await until(() => $(".hero")); await sleep(400); },
   // a wide photo keeps the whole crop stage inside the frame; 52 scrolls the top bar away (a shot may return a scroll offset)
-  async crop() { drop([await photo("sunset.jpg", 2000, 900)]); await until(() => $(".crop-stage canvas, .crop-stage img")); setInput("Aspect ratio", String(16 / 9)); await sleep(400); return 52; },
+  async crop() { drop([await photo("sunset.jpg", 2000, 760)]); await until(() => $(".crop-stage canvas, .crop-stage img")); setInput("Aspect ratio", String(16 / 9)); await sleep(400); return 0; },
   async compress() { drop([await photo()]); await until(() => $(".options")); setInput("Quality", "70"); await run(); },
+  async adjust() { drop([await photo("sunset.jpg"), await photo("harbour.jpg"), await photo("dunes.jpg")]); await until(() => $(".options canvas.preview")); setInput("Look", "vivid"); await sleep(500); return $(".options").offsetTop - 70; },
+  async pipeline() {
+    drop([await photo("sunset.jpg"), await photo("harbour.jpg"), await photo("dunes.jpg")]);
+    await until(() => $("select[aria-label='Add a step']"));
+    for (const id of ["resize", "adjust", "watermark", "compress"]) {
+      const s = $("select[aria-label='Add a step']"); s.value = id;
+      $$(".options button").find((b) => b.textContent.includes("Add step")).click();
+      await sleep(400);
+    }
+    await sleep(600); return $(".options").offsetTop - 70;
+  },
   async watermark() { drop([await photo()]); await until(() => $(".options")); setInput("Text", "© Andrii Photography"); setInput("Opacity", "60"); await sleep(600); },
   async favicons() { drop([await logo()]); await until(() => $(".options")); await run(); },
+  async qr() { await until(() => $(".options textarea")); textarea("https://andronaft.github.io/FileForge/"); await until(() => $(".qr-preview canvas")); await sleep(300); },
   async "pdf-merge"() {
     drop([await pdf("contract.pdf", "Service agreement", 3, win.PDFLib.rgb(0.1, 0.2, 0.45)), await pdf("appendix-A.pdf", "Appendix A", 2, win.PDFLib.rgb(0.6, 0.15, 0.3)), await pdf("invoice-2026-10.pdf", "Invoice", 1, win.PDFLib.rgb(0.1, 0.45, 0.3))]);
-    await until(() => $$(".files li").length === 3); await sleep(300);
+    await until(() => $$(".files li").length === 3); await sleep(600);
   },
+  async "pdf-nup"() { drop([await pdf("handout.pdf", "Quarterly review", 6, win.PDFLib.rgb(0.1, 0.2, 0.45))]); await until(() => $(".options")); setInput("Pages per sheet", "4"); await run(); },
   async "pdf-to-images"() { drop([await pdf("slides.pdf", "Quarterly review", 4, win.PDFLib.rgb(0.1, 0.2, 0.45))]); await until(() => $(".options")); await run(); },
   async "md-to-pdf"() { await until(() => $(".options textarea")); textarea(MD); await sleep(800); },
   async "json-format"() { await until(() => $(".options textarea")); textarea(JSON_TEXT); await run(); },
+  async diff() {
+    await until(() => $$(".options textarea").length >= 2);
+    textarea("server:\n  host: 0.0.0.0\n  port: 8080\n  workers: 4\nlogging:\n  level: info\n  format: json\ncache:\n  ttl: 300", 0);
+    textarea("server:\n  host: 0.0.0.0\n  port: 8443\n  workers: 8\n  tls: true\nlogging:\n  level: warn\n  format: json\ncache:\n  ttl: 300\n  size: 512mb", 1);
+    await sleep(500);
+  },
 };
 
 (async () => {
-  frame.src = `../../app/index.html?store=1#${shot}`;
+  // English UI and a few "recent" tools for the home page, whatever the machine's language is.
+  localStorage.setItem("fileforge.lang", "en");
+  localStorage.setItem("fileforge.recent", JSON.stringify(["compress", "pdf-merge", "adjust", "qr", "diff"]));
+  localStorage.removeItem("fileforge.pipeline.image");
+  frame.src = `../../app/index.html?store=1${shot === "home" ? "" : "#" + shot}`;
   await new Promise((r) => (frame.onload = r));
   win = frame.contentWindow;
   win.HTMLAnchorElement.prototype.click = () => {}; // no downloads while taking screenshots
-  await until(() => $(".dropzone, .options"));
+  await until(() => $(".dropzone, .options, .hero"));
   const scrollY = await SHOTS[shot]();
   win.scrollTo(0, scrollY || 0);
   await sleep(200);

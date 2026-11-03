@@ -1,5 +1,5 @@
 import { metadataTool } from "./metadata.js";
-import { el, baseName, field, select, number, checkbox, formatBytes, plural, toast } from "../util.js";
+import { el, baseName, field, select, number, checkbox, formatBytes, plural, toast, t } from "../util.js";
 
 // ---------- image engine ----------
 
@@ -225,7 +225,7 @@ const cropTool = {
       const s = st.sel;
       inX.value = s ? Math.round(s.x) : 0; inY.value = s ? Math.round(s.y) : 0;
       inW.value = s ? Math.round(s.w) : 0; inH.value = s ? Math.round(s.h) : 0;
-      info.textContent = s ? `Selection ${Math.round(s.w)} × ${Math.round(s.h)} px of ${st.w} × ${st.h}` : `Image ${st.w} × ${st.h} px — drag to select`;
+      info.textContent = s ? t("Selection {w} × {h} px of {W} × {H}", { w: Math.round(s.w), h: Math.round(s.h), W: st.w, H: st.h }) : t("Image {W} × {H} px — drag to select", { W: st.w, H: st.h });
     };
     const clampSel = () => {
       const s = st.sel; if (!s) return;
@@ -350,16 +350,28 @@ const resizeTool = {
     const lock = checkbox("Keep aspect ratio", true);
     const noEnlarge = checkbox("Don't enlarge smaller images", true);
     const fq = formatQualityRow();
-    const preset = select([["", "Custom"], ["3840", "4K · 3840 px wide"], ["1920", "Full HD · 1920 px wide"], ["1280", "HD · 1280 px wide"], ["1080", "Instagram · 1080 px wide"], ["800", "Web · 800 px wide"], ["256", "Thumbnail · 256 px wide"]], "");
-    preset.addEventListener("change", () => { if (preset.value) { width.value = preset.value; height.value = ""; lock.input.checked = true; } });
-    width.addEventListener("input", () => { preset.value = ""; });
-    const pixelsRow = el("div", { class: "row" }, [field("Preset", preset), field("Width (px)", width), field("Height (px)", height), lock.label]);
+    const preset = select([["", "Custom"], ["3840", "4K · 3840 px wide"], ["1920", "Full HD · 1920 px wide"], ["1280", "HD · 1280 px wide"], ["800", "Web · 800 px wide"], ["256", "Thumbnail · 256 px wide"],
+      ["1080x1080", "Instagram post · 1080 × 1080"], ["1080x1350", "Instagram portrait · 1080 × 1350"], ["1080x1920", "Story / Reels · 1080 × 1920"], ["1280x720", "YouTube thumbnail · 1280 × 720"], ["1200x630", "Link preview (Open Graph) · 1200 × 630"],
+      ["1500x500", "X / Twitter header · 1500 × 500"], ["1584x396", "LinkedIn banner · 1584 × 396"], ["820x312", "Facebook cover · 820 × 312"], ["2480x3508", "A4 at 300 dpi · 2480 × 3508"]], "");
+    const fit = select([["cover", "Cover: crop to the exact size"], ["inside", "Fit inside (keeps the whole image)"]], "cover");
+    const fitField = field("When both are set", fit); fitField.hidden = true;
+    const syncFit = () => { fitField.hidden = !(Number(width.value) && Number(height.value)); };
+    preset.addEventListener("change", () => {
+      if (!preset.value) return;
+      const [w, h] = preset.value.split("x");
+      width.value = w; height.value = h || "";
+      lock.input.checked = !h;
+      syncFit();
+    });
+    width.addEventListener("input", () => { preset.value = ""; syncFit(); });
+    height.addEventListener("input", () => { preset.value = ""; syncFit(); });
+    const pixelsRow = el("div", { class: "row" }, [field("Preset", preset), field("Width (px)", width), field("Height (px)", height), lock.label, fitField]);
     const percentRow = el("div", { class: "row", hidden: true }, [field("Scale (%)", percent)]);
     mode.addEventListener("change", () => { pixelsRow.hidden = mode.value !== "pixels"; percentRow.hidden = mode.value !== "percent"; });
     const info = el("div", { class: "stat" });
     root.append(el("div", { class: "row" }, [field("Mode", mode)]), pixelsRow, percentRow, noEnlarge.label, info, fq.row);
-    sizeOf(files[0]).then((d) => { info.textContent = `${files[0].name}: ${d.w} × ${d.h} px${files.length > 1 ? ` (+${files.length - 1} more)` : ""}`; }).catch(() => {});
-    this.opts = { mode, width, height, percent, lock, noEnlarge, fq };
+    sizeOf(files[0]).then((d) => { info.textContent = `${files[0].name}: ${d.w} × ${d.h} px${files.length > 1 ? ` ${t("(+{n} more)", { n: files.length - 1 })}` : ""}`; }).catch(() => {});
+    this.opts = { mode, width, height, percent, lock, noEnlarge, fq, fit };
   },
   async run(files, _root, progress) {
     const o = this.opts;
@@ -367,21 +379,28 @@ const resizeTool = {
     for (const file of files) {
       await progress?.tick(file.name);
       const d = await sizeOf(file);
-      let w, h;
+      let w, h, crop = null;
       if (o.mode.value === "percent") {
         const k = Number(o.percent.value) / 100;
-        if (!(k > 0)) throw new Error("Enter a percentage above 0");
+        if (!(k > 0)) throw new Error(t("Enter a percentage above 0"));
         w = d.w * k; h = d.h * k;
       } else {
         const tw = Number(o.width.value) || 0, th = Number(o.height.value) || 0;
-        if (!tw && !th) throw new Error("Enter a width or a height");
-        if (o.lock.input.checked || !tw || !th) {
+        if (!tw && !th) throw new Error(t("Enter a width or a height"));
+        if (tw && th && o.fit.value === "cover") {
+          // Crop the centre to the target aspect, then scale to exactly tw × th.
+          const target = tw / th, src = d.w / d.h;
+          const cw = src > target ? Math.round(d.h * target) : d.w, ch = src > target ? d.h : Math.round(d.w / target);
+          crop = { x: Math.round((d.w - cw) / 2), y: Math.round((d.h - ch) / 2), w: cw, h: ch };
+          w = tw; h = th;
+          if (o.noEnlarge.input.checked && (tw > cw || th > ch)) { const k = Math.min(cw / tw, ch / th); w = tw * k; h = th * k; }
+        } else if (o.lock.input.checked || !tw || !th) {
           const k = tw && th ? Math.min(tw / d.w, th / d.h) : tw ? tw / d.w : th / d.h;
           w = d.w * k; h = d.h * k;
         } else { w = tw; h = th; }
       }
-      if (o.noEnlarge.input.checked && (w > d.w || h > d.h)) { w = d.w; h = d.h; }
-      const r = await processImage(file, { width: Math.round(w), height: Math.round(h), format: o.fq.format, quality: o.fq.quality });
+      if (!crop && o.noEnlarge.input.checked && (w > d.w || h > d.h)) { w = d.w; h = d.h; }
+      const r = await processImage(file, { crop, width: Math.round(w), height: Math.round(h), format: o.fq.format, quality: o.fq.quality });
       out.push({ name: outName(file, r.mime, `${r.width}x${r.height}`), blob: r.blob, note: `${r.width} × ${r.height}` });
     }
     return out;
@@ -410,7 +429,7 @@ const rotateTool = {
       const c = transformStage(base.canvas, st.rotate, st.flipH, st.flipV);
       c.className = "preview";
       wrap.replaceChildren(c, status);
-      status.textContent = `Rotation ${st.rotate}°${st.flipH ? ", flipped horizontally" : ""}${st.flipV ? ", flipped vertically" : ""}`;
+      status.textContent = `${t("Rotation")} ${st.rotate}°${st.flipH ? t(", flipped horizontally") : ""}${st.flipV ? t(", flipped vertically") : ""}`;
     };
     const btn = (label, fn) => el("button", { type: "button", text: label, onclick: () => { fn(); redraw(); } });
     root.append(
@@ -463,7 +482,7 @@ const compressTool = {
         field("Max width/height (px)", maxDim, "Longest side is limited to this"),
         field("Output format", format),
       ]),
-      el("div", { class: "stat", text: `${plural(files.length, "file")}, ${formatBytes(files.reduce((s, f) => s + f.size, 0))} total` }),
+      el("div", { class: "stat", text: t("{files}, {size} total", { files: plural(files.length, "file"), size: formatBytes(files.reduce((s, f) => s + f.size, 0)) }) }),
       estimate,
     );
     this.opts = { quality, maxDim, target, format };
@@ -498,7 +517,7 @@ const compressTool = {
       if (my !== token) return;
       const saved = 1 - blob.size / file.size;
       const targetKb = Number(o.target.value);
-      estimate.textContent = `${file.name}: ${formatBytes(file.size)} → ${formatBytes(blob.size)} at quality ${o.quality.value} (${saved > 0 ? `−${Math.round(saved * 100)}%` : "no gain, the original will be kept"})${targetKb > 0 && fmt !== "png" ? ` · the ${targetKb} KB target is applied when you click Compress` : ""}${w !== d.w ? ` · ${w} × ${h}` : ""}`;
+      estimate.textContent = `${file.name}: ${formatBytes(file.size)} → ${formatBytes(blob.size)} ${t("at quality {q}", { q: o.quality.value })} (${saved > 0 ? `−${Math.round(saved * 100)}%` : t("no gain, the original will be kept")})${targetKb > 0 && fmt !== "png" ? ` · ${t("the {kb} KB target is applied when you click Compress", { kb: targetKb })}` : ""}${w !== d.w ? ` · ${w} × ${h}` : ""}`;
       try {
         const bmp = await createImageBitmap(blob);
         if (my !== token) { bmp.close(); return; }
@@ -541,18 +560,18 @@ const compressTool = {
           const t = await encode(canvas, mime, 0.5);
           if (t.size <= targetBytes) best = t;
         }
-        if (!best) throw new Error(`${file.name}: cannot get below ${formatBytes(targetBytes)}`);
+        if (!best) throw new Error(t("{name}: cannot get below {size}", { name: file.name, size: formatBytes(targetBytes) }));
         blob = best;
       }
       if (img.close) img.close();
       if (blob.size >= file.size) {
         // Re-encoding cannot beat the original: hand it back untouched instead of a bigger "compressed" file.
-        out.push({ name: file.name, blob: file, note: `already as small as it gets (re-encoding gave ${formatBytes(blob.size)})` });
+        out.push({ name: file.name, blob: file, note: t("already as small as it gets (re-encoding gave {size})", { size: formatBytes(blob.size) }) });
         continue;
       }
       out.push({
         name: outName(file, mime, "compressed"), blob,
-        note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)})`,
+        note: `−${Math.round((1 - blob.size / file.size) * 100)}% ${t("(was {size})", { size: formatBytes(file.size) })}`,
       });
     }
     return out;
@@ -702,7 +721,7 @@ const redactTool = {
       applyRedactions(canvas, boxes.map((b) => ({ x: b.x * k, y: b.y * k, w: b.w * k, h: b.h * k })), mode.value, Number(strength.value));
       ctx.strokeStyle = "#ff8c28"; ctx.lineWidth = 1.5;
       for (const b of boxes) ctx.strokeRect(b.x * k, b.y * k, b.w * k, b.h * k);
-      info.textContent = st.boxes.length ? `${plural(st.boxes.length, "box", "boxes")} · click a box to remove it, drag to add another` : `${st.w} × ${st.h} px · drag over the parts to hide`;
+      info.textContent = st.boxes.length ? t("{boxes} · click a box to remove it, drag to add another", { boxes: plural(st.boxes.length, "box", "boxes") }) : t("{w} × {h} px · drag over the parts to hide", { w: st.w, h: st.h });
     };
     mode.addEventListener("change", () => draw());
     strength.addEventListener("input", () => draw());
@@ -744,7 +763,7 @@ const redactTool = {
     applyRedactions(c, st.boxes, this.opts.mode.value, Number(this.opts.strength.value));
     const mime = this.fq.format === "keep" ? (formatOf(files[0]) || "image/png") : MIME[this.fq.format];
     const blob = await encode(c, mime, this.fq.quality / 100);
-    return [{ name: outName(files[0], mime, "redacted"), blob, note: `${plural(st.boxes.length, "area")} hidden` }];
+    return [{ name: outName(files[0], mime, "redacted"), blob, note: t("{areas} hidden", { areas: plural(st.boxes.length, "area") }) }];
   },
 };
 
@@ -783,7 +802,7 @@ const faviconTool = {
     const pad = checkbox("Pad non-square images to a square (transparent)", true);
     const info = el("div", { class: "stat" });
     root.append(el("div", { class: "row" }, [el("span", { class: "field-label", text: "PNG sizes" }), ...boxes.map((b) => b.label)]), el("div", { class: "row" }, [ico.label, pad.label]), info);
-    sizeOf(files[0]).then((d) => { info.textContent = `${files[0].name}: ${d.w} × ${d.h} px${d.w !== d.h ? " (not square)" : ""}`; }).catch(() => {});
+    sizeOf(files[0]).then((d) => { info.textContent = `${files[0].name}: ${d.w} × ${d.h} px${d.w !== d.h ? ` ${t("(not square)")}` : ""}`; }).catch(() => {});
     this.opts = { sizes, boxes, ico, pad };
   },
   async run(files) {
@@ -905,4 +924,380 @@ const heicTool = {
   },
 };
 
-export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, watermarkTool, redactTool, metadataTool, faviconTool];
+// ---------- adjust (filters) ----------
+
+const PRESETS = {
+  none: {}, vivid: { contrast: 115, saturation: 140 }, bw: { saturation: 0, contrast: 110 }, vintage: { sepia: 45, contrast: 90, brightness: 105 },
+  fade: { contrast: 85, brightness: 110, saturation: 85 }, cool: { hue: 15, saturation: 110 }, warm: { hue: -12, saturation: 110, brightness: 103 }, dramatic: { contrast: 140, saturation: 90, brightness: 95 },
+};
+const ADJ_DEFAULTS = { brightness: 100, contrast: 100, saturation: 100, hue: 0, blur: 0, sharpen: 0, grayscale: 0, sepia: 0 };
+
+function filterString(v) {
+  return `brightness(${v.brightness}%) contrast(${v.contrast}%) saturate(${v.saturation}%) hue-rotate(${v.hue}deg) grayscale(${v.grayscale}%) sepia(${v.sepia}%)${v.blur > 0 ? ` blur(${v.blur}px)` : ""}${v.invert ? " invert(100%)" : ""}`;
+}
+
+/** Unsharp-mask style sharpening with a 3 × 3 kernel; amount 0–1. */
+function sharpen(canvas, amount) {
+  const ctx = canvas.getContext("2d");
+  const { width: w, height: h } = canvas;
+  const src = ctx.getImageData(0, 0, w, h), out = ctx.createImageData(w, h);
+  const s = src.data, o = out.data, a = amount * 0.8, c = 1 + 4 * a;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    const up = y ? i - w * 4 : i, down = y < h - 1 ? i + w * 4 : i, left = x ? i - 4 : i, right = x < w - 1 ? i + 4 : i;
+    for (let k = 0; k < 3; k++) o[i + k] = Math.max(0, Math.min(255, c * s[i + k] - a * (s[up + k] + s[down + k] + s[left + k] + s[right + k])));
+    o[i + 3] = s[i + 3];
+  }
+  ctx.putImageData(out, 0, 0);
+  return canvas;
+}
+
+function applyAdjust(src, v) {
+  const { w, h } = dims(src);
+  const c = makeCanvas(w, h);
+  const ctx = c.getContext("2d");
+  ctx.filter = filterString(v);
+  ctx.drawImage(src, 0, 0);
+  ctx.filter = "none";
+  return v.sharpen > 0 ? sharpen(c, v.sharpen / 100) : c;
+}
+
+const adjustTool = {
+  id: "adjust",
+  title: "Adjust image",
+  description: "Brightness, contrast, saturation, warmth, blur, sharpen, grayscale and sepia with a live preview and one-click looks. Applies the same settings to every file.",
+  keywords: ["filter", "brightness", "contrast", "saturation", "black and white", "sepia", "sharpen", "blur", "photo", "exposure"],
+  accept: "image/*",
+  hint: "JPG, PNG, WebP — multiple files allowed",
+  runLabel: "Apply",
+  renderOptions(root, files) {
+    const preset = select(Object.keys(PRESETS).map((k) => [k, { none: "Custom", vivid: "Vivid", bw: "Black & white", vintage: "Vintage", fade: "Faded", cool: "Cool", warm: "Warm", dramatic: "Dramatic" }[k]]), "none");
+    const sliders = {};
+    let applying = false; // a look sets the sliders; that must not flip the select back to "Custom"
+    const mk = (key, label, min, max, unit = "%") => {
+      const input = el("input", { type: "range", min, max, value: ADJ_DEFAULTS[key] });
+      const lab = el("span", { class: "stat", text: `${input.value}${unit}` });
+      input.addEventListener("input", () => { lab.textContent = `${input.value}${unit}`; if (!applying) preset.value = "none"; });
+      sliders[key] = input;
+      return field(label, el("div", { class: "row" }, [input, lab]));
+    };
+    const invert = checkbox("Invert colours", false);
+    const fq = formatQualityRow();
+    const preview = el("canvas", { class: "preview" });
+    const resetBtn = el("button", { type: "button", class: "small", text: "Reset", onclick: () => { applying = true; for (const [k, v] of Object.entries(ADJ_DEFAULTS)) { sliders[k].value = v; sliders[k].dispatchEvent(new Event("input", { bubbles: true })); } applying = false; invert.input.checked = false; preset.value = "none"; paint(); } });
+    root.append(
+      el("div", { class: "row" }, [field("Look", preset), invert.label, resetBtn]),
+      el("div", { class: "row" }, [mk("brightness", "Brightness", 0, 200), mk("contrast", "Contrast", 0, 200), mk("saturation", "Saturation", 0, 200), mk("hue", "Hue shift", -180, 180, "°")]),
+      el("div", { class: "row" }, [mk("blur", "Blur", 0, 20, " px"), mk("sharpen", "Sharpen", 0, 100), mk("grayscale", "Grayscale", 0, 100), mk("sepia", "Sepia", 0, 100)]),
+      el("div", { class: "preview-wrap" }, [el("span", { class: "stat", text: files.length > 1 ? t("Preview of {name}; the same settings apply to all {n} files", { name: files[0].name, n: files.length }) : files[0].name }), preview]),
+      fq.row,
+    );
+    const values = () => ({ ...Object.fromEntries(Object.entries(sliders).map(([k, i]) => [k, Number(i.value)])), invert: invert.input.checked });
+    this.values = values; this.fq = fq;
+    let small = null, timer = null;
+    const paint = () => {
+      if (!small) return;
+      const v = values();
+      const c = applyAdjust(small, { ...v, blur: v.blur * (small.width / this.srcW) });
+      preview.width = c.width; preview.height = c.height;
+      preview.getContext("2d").drawImage(c, 0, 0);
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(paint, 60); };
+    for (const i of Object.values(sliders)) i.addEventListener("input", schedule);
+    invert.input.addEventListener("change", paint);
+    preset.addEventListener("change", () => {
+      const p = PRESETS[preset.value] || {};
+      applying = true;
+      for (const [k, v] of Object.entries(ADJ_DEFAULTS)) { sliders[k].value = p[k] ?? v; sliders[k].dispatchEvent(new Event("input", { bubbles: true })); }
+      applying = false;
+      paint();
+    });
+    previewOf(files[0], 520).then((pv) => { small = pv.canvas; this.srcW = pv.w; paint(); }).catch((err) => toast(err.message, "error"));
+  },
+  async run(files, _root, progress) {
+    const v = this.values(), out = [];
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const img = await loadImage(file);
+      const c = applyAdjust(img, v);
+      if (img.close) img.close();
+      const mime = this.fq.format === "keep" ? (formatOf(file) || "image/png") : MIME[this.fq.format];
+      out.push({ name: outName(file, mime, "adjusted"), blob: await encode(c, mime, this.fq.quality / 100), note: `${c.width} × ${c.height}` });
+    }
+    return out;
+  },
+};
+
+// ---------- frame & corners ----------
+
+function framed(src, o) {
+  const { w, h } = dims(src);
+  const pad = o.padUnit === "%" ? Math.round((Math.max(w, h) * o.pad) / 100) : o.pad;
+  const border = o.border, r = Math.min(o.radius, Math.min(w, h) / 2);
+  const c = makeCanvas(w + 2 * (pad + border), h + 2 * (pad + border));
+  const ctx = c.getContext("2d");
+  if (!o.transparent) { ctx.fillStyle = o.bg; ctx.fillRect(0, 0, c.width, c.height); }
+  const x = pad + border, y = pad + border;
+  const rounded = (px, py, pw, ph, rr) => { ctx.beginPath(); ctx.roundRect(px, py, pw, ph, rr); };
+  if (o.shadow) {
+    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.35)"; ctx.shadowBlur = Math.max(8, pad / 2); ctx.shadowOffsetY = Math.max(2, pad / 6);
+    rounded(x - border, y - border, w + 2 * border, h + 2 * border, r + border); ctx.fillStyle = border ? o.borderColor : "#000"; ctx.fill(); ctx.restore();
+  }
+  if (border) { rounded(x - border, y - border, w + 2 * border, h + 2 * border, r + border); ctx.fillStyle = o.borderColor; ctx.fill(); }
+  ctx.save(); rounded(x, y, w, h, r); ctx.clip(); ctx.drawImage(src, x, y); ctx.restore();
+  return c;
+}
+
+const frameTool = {
+  id: "frame",
+  title: "Frame, padding & corners",
+  description: "Add a coloured or transparent margin, a border, rounded corners and a soft shadow: screenshots ready for a post, a doc or an app store.",
+  keywords: ["border", "rounded", "padding", "margin", "shadow", "screenshot", "background", "mockup"],
+  accept: "image/*",
+  hint: "JPG, PNG, WebP — multiple files allowed",
+  runLabel: "Apply",
+  renderOptions(root, files) {
+    const pad = number(40, { min: 0, max: 2000 }), padUnit = select([["px", "px"], ["%", "% of the long side"]], "px");
+    const bg = el("input", { type: "color", value: "#ffffff" }), transparent = checkbox("Transparent background", false);
+    const border = number(0, { min: 0, max: 200 }), borderColor = el("input", { type: "color", value: "#1b1f27" });
+    const radius = number(16, { min: 0, max: 500 }), shadow = checkbox("Soft shadow", true);
+    const fq = formatQualityRow("png");
+    const preview = el("canvas", { class: "preview" });
+    root.append(
+      el("div", { class: "row" }, [field("Padding", el("div", { class: "row" }, [pad, padUnit])), field("Background", bg), transparent.label]),
+      el("div", { class: "row" }, [field("Border width (px)", border), field("Border colour", borderColor), field("Corner radius (px)", radius), shadow.label]),
+      el("div", { class: "preview-wrap" }, [preview]), fq.row,
+    );
+    const o = () => ({ pad: Number(pad.value) || 0, padUnit: padUnit.value, bg: bg.value, transparent: transparent.input.checked, border: Number(border.value) || 0, borderColor: borderColor.value, radius: Number(radius.value) || 0, shadow: shadow.input.checked });
+    this.opts = o; this.fq = fq;
+    let small = null, k = 1, timer = null;
+    const paint = () => { if (!small) return; const v = o(); const c = framed(small, { ...v, pad: v.padUnit === "px" ? Math.round(v.pad * k) : v.pad, border: Math.round(v.border * k), radius: Math.round(v.radius * k) }); preview.width = c.width; preview.height = c.height; preview.getContext("2d").drawImage(c, 0, 0); };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(paint, 60); };
+    for (const i of [pad, padUnit, bg, transparent.input, border, borderColor, radius, shadow.input]) { i.addEventListener("input", schedule); i.addEventListener("change", schedule); }
+    previewOf(files[0], 480).then((pv) => { small = pv.canvas; k = pv.canvas.width / pv.w; paint(); }).catch((err) => toast(err.message, "error"));
+  },
+  async run(files, _root, progress) {
+    const v = this.opts(), out = [];
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const img = await loadImage(file);
+      const c = framed(img, v);
+      if (img.close) img.close();
+      let fmt = this.fq.format === "keep" ? (formatOf(file) === "image/jpeg" ? "jpeg" : "png") : this.fq.format;
+      if ((v.transparent || v.radius > 0) && fmt === "jpeg") fmt = "png"; // keep the transparent corners
+      out.push({ name: outName(file, MIME[fmt], "framed"), blob: await encode(c, MIME[fmt], this.fq.quality / 100), note: `${c.width} × ${c.height}` });
+    }
+    return out;
+  },
+};
+
+// ---------- colour palette ----------
+
+/** Median-cut quantisation of sampled pixels into `count` colours, sorted by how much of the image they cover. */
+function extractPalette(src, count, skipExtremes) {
+  const c = makeCanvas(96, 96);
+  c.getContext("2d").drawImage(src, 0, 0, 96, 96);
+  const d = c.getContext("2d").getImageData(0, 0, 96, 96).data;
+  let px = [];
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 128) continue;
+    const r = d[i], g = d[i + 1], b = d[i + 2];
+    if (skipExtremes && ((r > 240 && g > 240 && b > 240) || (r < 15 && g < 15 && b < 15))) continue;
+    px.push([r, g, b]);
+  }
+  if (!px.length) return [];
+  let boxes = [px];
+  while (boxes.length < count) {
+    boxes.sort((a, b) => spread(b) - spread(a));
+    const box = boxes.shift();
+    if (box.length < 2) { boxes.push(box); break; }
+    const ch = widestChannel(box);
+    box.sort((a, b) => a[ch] - b[ch]);
+    const mid = box.length >> 1;
+    boxes.push(box.slice(0, mid), box.slice(mid));
+  }
+  return boxes.map((box) => {
+    const avg = [0, 1, 2].map((k) => Math.round(box.reduce((s, p) => s + p[k], 0) / box.length));
+    return { rgb: avg, hex: "#" + avg.map((v) => v.toString(16).padStart(2, "0")).join(""), share: box.length / px.length };
+  }).sort((a, b) => b.share - a.share);
+}
+function widestChannel(box) { const r = [0, 1, 2].map((k) => Math.max(...box.map((p) => p[k])) - Math.min(...box.map((p) => p[k]))); return r.indexOf(Math.max(...r)); }
+function spread(box) { return Math.max(...[0, 1, 2].map((k) => Math.max(...box.map((p) => p[k])) - Math.min(...box.map((p) => p[k])))); }
+function rgbToHsl([r, g, b]) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  if (max === min) return [0, 0, Math.round(l * 100)];
+  const dd = max - min, s = l > 0.5 ? dd / (2 - max - min) : dd / (max + min);
+  const h = max === r ? (g - b) / dd + (g < b ? 6 : 0) : max === g ? (b - r) / dd + 2 : (r - g) / dd + 4;
+  return [Math.round(h * 60), Math.round(s * 100), Math.round(l * 100)];
+}
+
+const paletteTool = {
+  id: "palette",
+  title: "Colour palette",
+  description: "Pull the dominant colours out of a photo, logo or screenshot as HEX, RGB and HSL, ready to paste as CSS variables, JSON or a swatch image.",
+  keywords: ["colors", "colours", "dominant", "swatch", "hex", "css variables", "brand", "theme"],
+  accept: "image/*",
+  multiple: false,
+  noAutoDownload: true,
+  hint: "One image",
+  runLabel: "Save palette",
+  renderOptions(root, files) {
+    const count = select([["4", "4"], ["6", "6"], ["8", "8"], ["12", "12"]], "6");
+    const skip = checkbox("Ignore pure white and black", true);
+    const naming = select([["hex", "HEX"], ["rgb", "RGB"], ["hsl", "HSL"]], "hex");
+    const swatches = el("div", { class: "swatches" });
+    const css = el("textarea", { readonly: true, spellcheck: "false", style: "min-height: 120px" });
+    const cf = field("CSS variables", css); cf.append(copyButtonLocal(() => css.value));
+    root.append(el("div", { class: "row" }, [field("Colours", count), field("Show as", naming), skip.label]), el("div", { class: "stat", text: "Click a swatch to copy its value" }), swatches, cf);
+    let img = null;
+    const update = () => {
+      if (!img) return;
+      const pal = extractPalette(img, Number(count.value), skip.input.checked);
+      this.palette = pal;
+      const label = (p) => naming.value === "hex" ? p.hex : naming.value === "rgb" ? `rgb(${p.rgb.join(", ")})` : `hsl(${rgbToHsl(p.rgb).map((v, i) => (i ? `${v}%` : v)).join(", ")})`;
+      swatches.replaceChildren(...pal.map((p) => el("button", { type: "button", class: "swatch", title: t("Copy {value}", { value: label(p) }), onclick: () => navigator.clipboard?.writeText(label(p)).then(() => toast(t("Copied {name}", { name: label(p) }))) }, [
+        el("i", { style: `background: ${p.hex}` }), el("code", { text: label(p) }), el("span", { class: "stat", text: `${Math.round(p.share * 100)}%` }),
+      ])));
+      css.value = `:root {\n${pal.map((p, i) => `  --color-${i + 1}: ${label(p)};`).join("\n")}\n}\n`;
+    };
+    for (const i of [count, naming, skip.input]) i.addEventListener("change", update);
+    loadImage(files[0]).then((im) => { img = im; update(); }).catch((err) => toast(err.message, "error"));
+  },
+  async run(files) {
+    const pal = this.palette;
+    if (!pal?.length) throw new Error(t("No colours found"));
+    const base = baseName(files[0].name);
+    const json = pal.map((p) => ({ hex: p.hex, rgb: p.rgb, hsl: rgbToHsl(p.rgb), share: Math.round(p.share * 1000) / 1000 }));
+    const strip = makeCanvas(pal.length * 120, 160);
+    const ctx = strip.getContext("2d");
+    pal.forEach((p, i) => { ctx.fillStyle = p.hex; ctx.fillRect(i * 120, 0, 120, 120); ctx.fillStyle = "#fff"; ctx.fillRect(i * 120, 120, 120, 40); ctx.fillStyle = "#111"; ctx.font = "14px ui-monospace, Menlo, monospace"; ctx.textAlign = "center"; ctx.fillText(p.hex, i * 120 + 60, 145); });
+    return [
+      { name: `${base}-palette.png`, blob: await encode(strip, "image/png"), note: plural(pal.length, "colour") },
+      { name: `${base}-palette.json`, blob: new Blob([JSON.stringify(json, null, 2)], { type: "application/json" }) },
+      { name: `${base}-palette.css`, blob: new Blob([`:root {\n${pal.map((p, i) => `  --color-${i + 1}: ${p.hex};`).join("\n")}\n}\n`], { type: "text/css" }) },
+    ];
+  },
+};
+function copyButtonLocal(getText) {
+  return el("button", { type: "button", class: "copy", text: "Copy", onclick: async () => { try { await navigator.clipboard.writeText(getText()); toast("Copied to the clipboard"); } catch (err) { toast(`Could not copy: ${err.message}`, "error"); } } });
+}
+
+// ---------- QR code ----------
+
+let qrLoading = null;
+function loadQr() {
+  if (globalThis.qrcode) return Promise.resolve(globalThis.qrcode);
+  qrLoading ??= new Promise((resolve, reject) => {
+    const s = el("script", { src: new URL("../../vendor/qrcode.js", import.meta.url).href });
+    s.onload = () => { globalThis.qrcode.stringToBytes = globalThis.qrcode.stringToBytesFuncs["UTF-8"]; resolve(globalThis.qrcode); };
+    s.onerror = () => reject(new Error("Could not load the QR encoder"));
+    document.head.append(s);
+  });
+  return qrLoading;
+}
+
+function qrModules(text, level) {
+  const q = globalThis.qrcode(0, level);
+  q.addData(text, "Byte");
+  q.make();
+  const n = q.getModuleCount();
+  return { n, dark: (r, c) => q.isDark(r, c) };
+}
+
+function qrCanvas(m, size, margin, dark, light) {
+  const cell = Math.floor(size / (m.n + 2 * margin)) || 1;
+  const px = cell * (m.n + 2 * margin);
+  const c = makeCanvas(px, px);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = light; ctx.fillRect(0, 0, px, px);
+  ctx.fillStyle = dark;
+  for (let r = 0; r < m.n; r++) for (let col = 0; col < m.n; col++) if (m.dark(r, col)) ctx.fillRect((col + margin) * cell, (r + margin) * cell, cell, cell);
+  return c;
+}
+
+function qrSvg(m, margin, dark, light) {
+  const n = m.n + 2 * margin;
+  let d = "";
+  for (let r = 0; r < m.n; r++) for (let c = 0; c < m.n; c++) if (m.dark(r, c)) d += `M${c + margin} ${r + margin}h1v1h-1z`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n} ${n}" shape-rendering="crispEdges"><rect width="${n}" height="${n}" fill="${light}"/><path d="${d}" fill="${dark}"/></svg>\n`;
+}
+
+const qrTool = {
+  id: "qr",
+  title: "QR code",
+  description: "Make a QR code for a link, text, Wi-Fi network, e-mail, phone number or contact card, as PNG or SVG, in any colours. Nothing is sent anywhere.",
+  keywords: ["qr", "barcode", "wifi", "vcard", "link", "share"],
+  accept: ".txt,text/plain",
+  multiple: false,
+  filesOptional: true,
+  noAutoDownload: true,
+  hint: "",
+  runLabel: "Download",
+  renderOptions(root) {
+    const kind = select([["text", "Link or text"], ["wifi", "Wi-Fi network"], ["email", "E-mail"], ["tel", "Phone number"], ["sms", "SMS"], ["vcard", "Contact card (vCard)"]], "text");
+    const text = el("textarea", { placeholder: "https://example.com", "data-noremember": "", style: "min-height: 70px" });
+    const ssid = el("input", { type: "text", placeholder: "Network name", "data-noremember": "" }), pass = el("input", { type: "text", placeholder: "Password", "data-noremember": "" }), enc = select([["WPA", "WPA/WPA2"], ["WEP", "WEP"], ["nopass", "Open network"]], "WPA"), hidden = checkbox("Hidden network", false);
+    const email = el("input", { type: "text", placeholder: "name@example.com", "data-noremember": "" }), subject = el("input", { type: "text", placeholder: "Subject", "data-noremember": "" });
+    const phone = el("input", { type: "text", placeholder: "+380 ...", "data-noremember": "" }), smsBody = el("input", { type: "text", placeholder: "Message", "data-noremember": "" });
+    const vn = el("input", { type: "text", placeholder: "Full name", "data-noremember": "" }), vorg = el("input", { type: "text", placeholder: "Company", "data-noremember": "" }), vtel = el("input", { type: "text", placeholder: "Phone", "data-noremember": "" }), vmail = el("input", { type: "text", placeholder: "E-mail", "data-noremember": "" }), vurl = el("input", { type: "text", placeholder: "Website", "data-noremember": "" });
+    const rows = {
+      text: el("div", {}, [field("Content", text)]),
+      wifi: el("div", { class: "row" }, [field("Network", ssid), field("Password", pass), field("Security", enc), hidden.label]),
+      email: el("div", { class: "row" }, [field("To", email), field("Subject", subject)]),
+      tel: el("div", { class: "row" }, [field("Number", phone)]),
+      sms: el("div", { class: "row" }, [field("Number", phone), field("Message", smsBody)]),
+      vcard: el("div", { class: "row" }, [field("Name", vn), field("Company", vorg), field("Phone", vtel), field("E-mail", vmail), field("Website", vurl)]),
+    };
+    const size = select([["256", "256 px"], ["512", "512 px"], ["1024", "1024 px"], ["2048", "2048 px"]], "512");
+    const level = select([["L", "L · 7% (smallest)"], ["M", "M · 15%"], ["Q", "Q · 25%"], ["H", "H · 30% (sturdiest)"]], "M");
+    const margin = number(4, { min: 0, max: 16 }), dark = el("input", { type: "color", value: "#000000" }), light = el("input", { type: "color", value: "#ffffff" });
+    const format = select([["png", "PNG"], ["svg", "SVG"]], "png");
+    const preview = el("div", { class: "qr-preview" });
+    const info = el("div", { class: "stat" });
+    root.append(
+      el("div", { class: "row" }, [field("Type", kind)]), ...Object.values(rows),
+      el("div", { class: "row" }, [field("Size", size), field("Error correction", level), field("Quiet zone (modules)", margin), field("Dark", dark), field("Light", light), field("Format", format)]),
+      el("div", { class: "preview-wrap" }, [preview, info]),
+    );
+    const showRows = () => { for (const [k, r] of Object.entries(rows)) r.hidden = k !== kind.value; };
+    const esc = (s) => s.replace(/([\;,:"])/g, "\\$1");
+    const payload = () => {
+      switch (kind.value) {
+        case "wifi": return ssid.value ? `WIFI:T:${enc.value};S:${esc(ssid.value)};${enc.value !== "nopass" ? `P:${esc(pass.value)};` : ""}${hidden.input.checked ? "H:true;" : ""};` : "";
+        case "email": return email.value ? `mailto:${email.value}${subject.value ? `?subject=${encodeURIComponent(subject.value)}` : ""}` : "";
+        case "tel": return phone.value ? `tel:${phone.value.replace(/[\s()-]/g, "")}` : "";
+        case "sms": return phone.value ? `SMSTO:${phone.value.replace(/[\s()-]/g, "")}:${smsBody.value}` : "";
+        case "vcard": return vn.value ? `BEGIN:VCARD\nVERSION:3.0\nN:${vn.value}\nFN:${vn.value}\n${vorg.value ? `ORG:${vorg.value}\n` : ""}${vtel.value ? `TEL:${vtel.value}\n` : ""}${vmail.value ? `EMAIL:${vmail.value}\n` : ""}${vurl.value ? `URL:${vurl.value}\n` : ""}END:VCARD` : "";
+        default: return text.value;
+      }
+    };
+    this.get = () => ({ payload: payload(), size: Number(size.value), level: level.value, margin: Number(margin.value) || 0, dark: dark.value, light: light.value, format: format.value });
+    let timer = null;
+    const paint = async () => {
+      const o = this.get();
+      if (!o.payload) { preview.replaceChildren(); info.textContent = t("Type something to encode"); return; }
+      try {
+        await loadQr();
+        const m = qrModules(o.payload, o.level);
+        preview.replaceChildren(qrCanvas(m, 256, o.margin, o.dark, o.light));
+        info.textContent = t("{n} × {n} modules · {bytes} bytes", { n: m.n, bytes: new TextEncoder().encode(o.payload).length });
+      } catch (err) { preview.replaceChildren(); info.textContent = err.message.includes("overflow") ? t("Too much data for a QR code; shorten the text or lower the error correction") : err.message; }
+    };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(paint, 150); };
+    kind.addEventListener("change", () => { showRows(); paint(); });
+    for (const i of root.querySelectorAll("input, select, textarea")) { i.addEventListener("input", schedule); i.addEventListener("change", schedule); }
+    showRows(); paint();
+  },
+  async run() {
+    const o = this.get();
+    if (!o.payload) throw new Error(t("Type something to encode"));
+    await loadQr();
+    const m = qrModules(o.payload, o.level);
+    if (o.format === "svg") return [{ name: "qr.svg", blob: new Blob([qrSvg(m, o.margin, o.dark, o.light)], { type: "image/svg+xml" }), note: `${m.n} × ${m.n}` }];
+    const c = qrCanvas(m, o.size, o.margin, o.dark, o.light);
+    return [{ name: "qr.png", blob: await encode(c, "image/png"), note: `${c.width} × ${c.height}` }];
+  },
+};
+
+export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, adjustTool, frameTool, watermarkTool, redactTool, metadataTool, paletteTool, faviconTool, qrTool];

@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.0.0
+
+### Added
+
+- **Ukrainian interface.** The app follows the browser language and can be switched in Settings. (#15)
+- **Pipeline**: chain tools (resize → adjust → watermark → compress, merge → page numbers → compress) and run
+  them on every file in one go; each step keeps its usual options and the chain is remembered. (#27)
+- **New image tools**: Adjust (brightness, contrast, saturation, hue, blur, sharpen, grayscale, sepia, one-click
+  looks, live preview), Frame, padding & corners, Colour palette (HEX/RGB/HSL, CSS variables, JSON, swatch PNG),
+  QR code (link, text, Wi-Fi, e-mail, phone, SMS, vCard; PNG or SVG). Resize gained social-media presets with
+  cover-crop.
+- **New PDF tools**: Crop pages (by millimetres or auto-trim of white margins), Pages per sheet (2/4/6/9/16-up
+  and 1-up re-flow to A4/Letter/A3), Stamp image or signature, Extract images.
+- **New text tools**: Text diff, Checksums & hashes (SHA-256/1/512, MD5, CRC32, verify), Word count & case,
+  JWT decoder (with optional HMAC verification), URL encode/decode/parse, Regex tester, Markdown to HTML.
+- **New interface**: a home page with every tool, recent tools and a drop zone that picks the right tool;
+  searchable sidebar with icons; command palette (⌘K / Ctrl+K); keyboard shortcuts (`?`); result previews
+  (images, PDFs and text open in a lightbox); file-type icons; a Settings dialog (language, theme, automatic
+  download of single results, forget remembered options); a drag-over overlay; refreshed colours, buttons and
+  cards in both themes.
+
+### Changed
+
+- The toolbar button and the web app open the home page instead of Crop. `#tool-id` links and `?tool=` keep
+  working.
+- 42 tools in total (was 26).
+
+
 ## 0.6.0
 
 ### Added
