@@ -7,6 +7,7 @@ import { markdownTools } from "./tools/markdown.js";
 import { dataTools } from "./tools/data.js";
 import { textTools } from "./tools/text.js";
 import { pipelineTool } from "./tools/pipeline.js";
+import { fileTools } from "./tools/files.js";
 import { thumbnail } from "./thumbs.js";
 
 await initLang();
@@ -18,6 +19,7 @@ const groups = [
   { id: "images", title: "Images", icon: "image", tools: imageTools },
   { id: "pdf", title: "PDF", icon: "pdf", tools: pdfTools },
   { id: "text", title: "Text & data", icon: "text", tools: [...markdownTools, ...dataTools, ...textTools] },
+  { id: "files", title: "Files", icon: "file", tools: fileTools },
   { id: "batch", title: "Batch", icon: "zap", tools: [pipelineTool] },
 ];
 const tools = groups.flatMap((g) => g.tools);
@@ -51,6 +53,30 @@ function noteRecent(id) {
   try { localStorage.setItem("fileforge.recent", JSON.stringify(list)); } catch (_) { /* ignore */ }
 }
 
+// ---------- favourites ----------
+function favIds() {
+  try { return (JSON.parse(localStorage.getItem("fileforge.favourites") || "[]")).filter((id) => tools.some((x) => x.id === id)); } catch (_) { return []; }
+}
+function isFav(id) { return favIds().includes(id); }
+function toggleFav(id) {
+  const list = isFav(id) ? favIds().filter((x) => x !== id) : [...favIds(), id];
+  try { localStorage.setItem("fileforge.favourites", JSON.stringify(list)); } catch (_) { /* ignore */ }
+  toast(list.includes(id) ? "Added to favourites" : "Removed from favourites");
+  renderNav();
+  if (state.tool) paintFav(); else renderHome();
+}
+function favButton(tool) {
+  return el("button", { type: "button", class: "icon fav-btn", "aria-pressed": isFav(tool.id) ? "true" : "false", title: isFav(tool.id) ? "Remove from favourites" : "Add to favourites", onclick: (e) => { e.preventDefault(); toggleFav(tool.id); } }, [icon("star", 18)]);
+}
+function paintFav() {
+  for (const b of document.querySelectorAll(".fav-btn")) {
+    const id = b.closest("[data-id]")?.dataset.id || state.tool?.id;
+    const on = isFav(id);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+    b.title = on ? t("Remove from favourites") : t("Add to favourites");
+  }
+}
+
 // ---------- search ----------
 function haystack(tool) {
   return [tool.title, t(tool.title), tool.description, t(tool.description), ...(tool.keywords || []), tool.group.title, t(tool.group.title), tool.id].join(" ").toLowerCase();
@@ -80,6 +106,11 @@ function renderNav() {
   navSelect.replaceChildren(el("option", { value: "home", text: "All tools", selected: !state.tool }));
   const q = navFilter.value.trim();
   const shown = new Set(searchTools(q).map((x) => x.id));
+  const favs = favIds().map((id) => tools.find((x) => x.id === id)).filter((x) => shown.has(x.id));
+  if (favs.length) {
+    navList.append(el("div", { class: "nav-group", text: "Favourites" }));
+    for (const tool of favs) navList.append(navLink(tool));
+  }
   for (const g of groups) {
     const items = g.tools.filter((x) => shown.has(x.id));
     if (!items.length) continue;
@@ -283,9 +314,10 @@ function requestedToolId() {
 }
 
 function toolCard(tool) {
-  return el("a", { class: "tool-card", href: `#${tool.id}` }, [
+  return el("a", { class: "tool-card", href: `#${tool.id}`, "data-id": tool.id }, [
     el("span", { class: "tool-card-icon" }, [icon(tool.icon || tool.id, 22)]),
     el("span", { class: "tool-card-text" }, [el("strong", { text: tool.title }), el("span", { text: tool.description })]),
+    favButton(tool),
   ]);
 }
 
@@ -294,7 +326,7 @@ function renderHome() {
   state.results = [];
   document.title = "FileForge";
   renderNav();
-  const search = el("button", { type: "button", class: "home-search", onclick: openPalette }, [icon("search"), el("span", { text: "Search 40+ tools…" }), el("kbd", { text: `${MOD} K` })]);
+  const search = el("button", { type: "button", class: "home-search", onclick: openPalette }, [icon("search"), el("span", { text: "Search 50+ tools…" }), el("kbd", { text: `${MOD} K` })]);
   const fileInput = el("input", { type: "file", hidden: true, multiple: true, onchange: () => { openFiles([...fileInput.files]); fileInput.value = ""; } });
   const drop = el("section", { class: "dropzone home-drop", tabindex: "0", role: "button", "aria-label": "Choose files" }, [
     fileInput,
@@ -307,6 +339,7 @@ function renderHome() {
   drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
   ui.dropzone = drop;
   const recent = recentIds().map((id) => tools.find((x) => x.id === id));
+  const favs = favIds().map((id) => tools.find((x) => x.id === id));
   const sections = groups.map((g) => el("section", { class: "home-group" }, [
     el("h2", {}, [icon(g.icon, 18), el("span", { text: g.title }), el("span", { class: "count", text: String(g.tools.length) })]),
     el("div", { class: "tool-grid" }, g.tools.map(toolCard)),
@@ -318,6 +351,7 @@ function renderHome() {
       search,
     ]),
     drop,
+    favs.length ? el("section", { class: "home-group" }, [el("h2", {}, [icon("star", 18), el("span", { text: "Favourites" })]), el("div", { class: "chips" }, favs.map((tool) => el("a", { class: "chip", href: `#${tool.id}` }, [icon(tool.icon || tool.id, 16), el("span", { text: tool.title })])))]) : null,
     recent.length ? el("section", { class: "home-group" }, [el("h2", {}, [icon("zap", 18), el("span", { text: "Recent" })]), el("div", { class: "chips" }, recent.map((tool) => el("a", { class: "chip", href: `#${tool.id}` }, [icon(tool.icon || tool.id, 16), el("span", { text: tool.title })])))]) : null,
     ...sections,
     el("footer", { class: "home-foot" }, [
@@ -382,7 +416,8 @@ function mount() {
   main.replaceChildren(
     el("section", { class: "tool-head" }, [
       el("span", { class: "tool-head-icon" }, [icon(tool.icon || tool.id, 26)]),
-      el("div", {}, [el("h1", { text: tool.title }), el("p", { text: tool.description })]),
+      el("div", { class: "tool-head-text" }, [el("h1", { text: tool.title }), el("p", { text: tool.description })]),
+      favButton(tool),
     ]),
     dropzone,
     ui.fileList,

@@ -510,4 +510,110 @@ const regexTool = {
   },
 };
 
-export const textTools = [diffTool, hashTool, textCaseTool, jwtTool, urlTool, regexTool];
+// ---------- colour converter & contrast ----------
+
+const hex2 = (v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, "0");
+export function parseColour(s) {
+  s = String(s || "").trim();
+  if (!s) return null;
+  let m;
+  if ((m = s.match(/^#?([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i))) {
+    let h = m[1]; if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: h.length === 8 ? parseInt(h.slice(6, 8), 16) / 255 : 1 };
+  }
+  if ((m = s.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+%?))?\s*\)$/i))) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] ? (m[4].endsWith("%") ? parseFloat(m[4]) / 100 : +m[4]) : 1 };
+  if ((m = s.match(/^hsla?\(\s*([\d.]+)(?:deg)?[,\s]+([\d.]+)%?[,\s]+([\d.]+)%?(?:[,\s/]+([\d.]+%?))?\s*\)$/i))) { const [r, g, b] = hslToRgb(+m[1], +m[2], +m[3]); return { r, g, b, a: m[4] ? (m[4].endsWith("%") ? parseFloat(m[4]) / 100 : +m[4]) : 1 }; }
+  // named colours: let the canvas resolve them
+  const ctx = document.createElement("canvas").getContext("2d");
+  ctx.fillStyle = "#010203"; ctx.fillStyle = s;
+  if (ctx.fillStyle === "#010203" && !/^#?010203$/i.test(s) && s.toLowerCase() !== "rgb(1, 2, 3)") return null;
+  return parseColour(ctx.fillStyle);
+}
+function hslToRgb(h, s, l) {
+  h = ((h % 360) + 360) % 360; s /= 100; l /= 100;
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = l - c / 2;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+}
+function rgbToHsl2(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  if (max === min) return [0, 0, l * 100];
+  const d = max - min, s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  const h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s * 100, l * 100];
+}
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  const h = d === 0 ? 0 : max === r ? (60 * ((g - b) / d) + 360) % 360 : max === g ? 60 * ((b - r) / d) + 120 : 60 * ((r - g) / d) + 240;
+  return [h, max === 0 ? 0 : (d / max) * 100, max * 100];
+}
+export function luminanceOf({ r, g, b }) {
+  const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+export function contrastRatio(a, b) { const la = luminanceOf(a), lb = luminanceOf(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); }
+const toHex = (c) => `#${hex2(c.r)}${hex2(c.g)}${hex2(c.b)}${c.a < 1 ? hex2(c.a * 255) : ""}`;
+const mix = (c, to, k) => ({ r: c.r + (to - c.r) * k, g: c.g + (to - c.g) * k, b: c.b + (to - c.b) * k, a: 1 });
+
+const colourTool = {
+  id: "colour",
+  title: "Colour converter & contrast",
+  description: "Convert a colour between HEX, RGB, HSL and HSV, get tints, shades and the complement, and check WCAG contrast against a background: AA and AAA for normal and large text.",
+  keywords: ["color", "hex", "rgb", "hsl", "wcag", "accessibility", "a11y", "contrast ratio", "shades", "tints", "css"],
+  accept: ".txt,text/plain",
+  multiple: false,
+  filesOptional: true,
+  noAutoDownload: true,
+  hint: "",
+  runLabel: "Save as CSS",
+  renderOptions(root) {
+    const input = el("input", { type: "text", value: "#ff8c28", placeholder: "#ff8c28, rgb(255 140 40), hsl(28 100% 58%), tomato", "data-noremember": "" });
+    const pick = el("input", { type: "color", value: "#ff8c28", "data-noremember": "" });
+    const bg = el("input", { type: "text", value: "#ffffff", "data-noremember": "" }), bgPick = el("input", { type: "color", value: "#ffffff", "data-noremember": "" });
+    const table = el("table", { class: "meta" }), swatches = el("div", { class: "swatches" }), contrast = el("div", { class: "contrast" }), status = el("div", { class: "stat" });
+    root.append(
+      el("div", { class: "row" }, [field("Colour", el("div", { class: "row" }, [input, pick])), field("Background for contrast", el("div", { class: "row" }, [bg, bgPick]))]),
+      status, table, el("div", { class: "field-label", text: "Tints, shades and complement" }), swatches, contrast,
+    );
+    const copyable = (text) => el("td", {}, [el("code", { text }), " ", copyButton(() => text, "Copy")]);
+    const swatch = (hex, label) => el("button", { type: "button", class: "swatch", title: "Copy", onclick: async () => { try { await navigator.clipboard.writeText(hex); toast(t("Copied {hex}", { hex })); } catch (_) { /* ignore */ } } }, [el("i", { style: `background:${hex}` }), el("code", { text: hex }), el("span", { text: label })]);
+    const update = () => {
+      const c = parseColour(input.value), b = parseColour(bg.value);
+      if (!c) { status.textContent = t("Cannot read that colour. Try #rrggbb, rgb(), hsl() or a CSS name."); table.replaceChildren(); swatches.replaceChildren(); contrast.replaceChildren(); this.css = ""; return; }
+      status.textContent = "";
+      pick.value = toHex(c).slice(0, 7);
+      const [h, s, l] = rgbToHsl2(c.r, c.g, c.b), [hv, sv, v] = rgbToHsv(c.r, c.g, c.b);
+      const r = (x) => Math.round(x);
+      const rows = [["HEX", toHex(c)], ["RGB", `rgb(${r(c.r)} ${r(c.g)} ${r(c.b)}${c.a < 1 ? ` / ${c.a.toFixed(2)}` : ""})`], ["HSL", `hsl(${r(h)} ${r(s)}% ${r(l)}%)`], ["HSV / HSB", `${r(hv)}°, ${r(sv)}%, ${r(v)}%`], ["Relative luminance", luminanceOf(c).toFixed(3)]];
+      table.replaceChildren(...rows.map(([k, val]) => el("tr", {}, [el("th", { text: k }), copyable(val)])));
+      const tints = [0.8, 0.6, 0.4, 0.2].map((k) => [toHex(mix(c, 255, k)), `+${r(k * 100)}%`]);
+      const shades = [0.2, 0.4, 0.6, 0.8].map((k) => [toHex(mix(c, 0, k)), `−${r(k * 100)}%`]);
+      const [cr, cg, cb] = hslToRgb(h + 180, s, l);
+      const comp = toHex({ r: cr, g: cg, b: cb, a: 1 });
+      swatches.replaceChildren(...tints.map(([x, lab]) => swatch(x, lab)), swatch(toHex(c).slice(0, 7), t("base")), ...shades.map(([x, lab]) => swatch(x, lab)), swatch(comp, t("complement")));
+      if (b) {
+        bgPick.value = toHex(b).slice(0, 7);
+        const ratio = contrastRatio(c, b);
+        const pass = (min) => el("span", { class: `badge ${ratio >= min ? "ok" : "bad"}`, text: ratio >= min ? "✔" : "✖" });
+        contrast.replaceChildren(
+          el("div", { class: "contrast-sample", style: `background:${toHex(b)};color:${toHex(c)}` }, [el("strong", { text: "Large text 24px" }), el("span", { text: "Normal text 16px: the quick brown fox jumps over the lazy dog." })]),
+          el("div", { class: "stat" }, [t("Contrast {ratio}:1", { ratio: ratio.toFixed(2) }), " · AA ", t("normal"), " ", pass(4.5), " · AA ", t("large"), " ", pass(3), " · AAA ", t("normal"), " ", pass(7), " · AAA ", t("large"), " ", pass(4.5)]),
+        );
+      } else contrast.replaceChildren(el("div", { class: "stat", text: "Cannot read the background colour" }));
+      const name = "colour";
+      this.css = `:root {\n  --${name}: ${toHex(c)};\n${tints.map(([x], i) => `  --${name}-tint-${i + 1}: ${x};`).join("\n")}\n${shades.map(([x], i) => `  --${name}-shade-${i + 1}: ${x};`).join("\n")}\n  --${name}-complement: ${comp};\n}\n`;
+    };
+    input.addEventListener("input", update); bg.addEventListener("input", update);
+    pick.addEventListener("input", () => { input.value = pick.value; update(); });
+    bgPick.addEventListener("input", () => { bg.value = bgPick.value; update(); });
+    update();
+  },
+  async run() {
+    if (!this.css) throw new Error("Enter a valid colour first");
+    return [{ name: "colour.css", blob: new Blob([this.css], { type: "text/css" }), note: "CSS variables" }];
+  },
+};
+
+export const textTools = [diffTool, hashTool, textCaseTool, jwtTool, urlTool, regexTool, colourTool];

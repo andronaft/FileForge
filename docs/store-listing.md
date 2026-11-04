@@ -8,7 +8,7 @@ FileForge: image, PDF & file tools
 
 ## Summary (max 132 characters)
 
-42 image, PDF and text tools: crop, compress, convert, merge, split, redact, QR, diff, hashes. 100% on your device, in EN/UK.
+51 image, PDF and text tools: crop, compress, convert, merge, split, redact, QR, diff, forms. 100% on your device, in EN/UK.
 
 ## Category
 
@@ -35,6 +35,10 @@ IMAGES
 • Colour palette: the dominant colours as HEX, RGB, HSL, CSS variables, JSON or a swatch image
 • QR code: link, text, Wi-Fi, e-mail, phone, SMS or vCard, as PNG or SVG
 • Resize presets for Instagram, Stories, YouTube, Open Graph, LinkedIn, X with cover-crop or fit
+• Collage and contact sheet: many photos in one grid, with a gap, background and file names
+• Split an image into tiles (3 × 3 Instagram grids, banners) or fixed-size pieces
+• Compare two screenshots pixel by pixel: changes highlighted and counted
+• SVG → PNG, JPEG or WebP at any size, with 1×/2×/3× sets
 • Right-click any image on a web page → "Edit image in FileForge"; right-click a PDF link → "Open PDF in FileForge"
 • Alt+Shift+F opens FileForge from any tab
 
@@ -51,6 +55,8 @@ PDF
 • Pages per sheet: 2, 4, 6, 9 or 16 pages on one A4 / Letter / A3 sheet, or 1 per sheet to re-flow page sizes
 • Stamp an image or signature on all, first, last or chosen pages
 • Extract the images embedded in a PDF at their original resolution
+• Booklet: re-order pages for double-sided printing that folds into a booklet
+• Fill PDF forms (text, checkboxes, choices) and save them filled or flattened
 
 TEXT & DATA
 • Markdown → PDF with a live preview and three themes
@@ -63,12 +69,15 @@ TEXT & DATA
 • Word count, reading time and case conversion (UPPER, Title, camelCase, snake_case…), trim / dedupe / sort lines
 • JWT decoder with expiry check and optional HS256/384/512 verification
 • URL encode, decode and parse; regex tester with live highlighting
+• Table converter: CSV, TSV, Markdown, HTML or JSON → Markdown table, CSV, HTML, JSON or SQL
+• Colour converter with tints, shades and a WCAG contrast checker
+• Rename files in bulk with patterns, counters, dates, find & replace and Latin-only names
 • Pipeline: chain tools (resize → adjust → watermark → compress) and run them on every file at once
 
 EVERYDAY DETAILS
 • Batches show progress and can be cancelled; results download one by one, as a ZIP, copy to the clipboard, or go straight into the next tool
 • Every tool remembers the options you used last time
-• Interface in English and Ukrainian, light and dark theme, a home page with every tool, a command palette (Ctrl+K) and keyboard shortcuts
+• Interface in English and Ukrainian, light and dark theme, a home page with every tool, a command palette (Ctrl+K), keyboard shortcuts and favourite tools
 • Results can be previewed in place before you download them
 • Drop files anywhere on the page, paste images from the clipboard, Ctrl+Enter to run
 • Side panel mode: keep FileForge open beside the page you are working on; the right-click entries then load files straight into the panel
@@ -166,8 +175,8 @@ https://andronaft.github.io/FileForge/privacy.html
 ## Assets
 
 - Icon: `icons/icon128.png`
-- Screenshots, 1280×800 JPEG: `docs/store/1-home.jpg` … `5-pipeline.jpg` (upload in order); addons.mozilla.org also
-  takes `6-compress.jpg` … `14-favicons.jpg`
+- Screenshots, 1280×800 JPEG: `docs/store/1-home.jpg` … `6-pipeline.jpg` (upload in order); addons.mozilla.org also
+  takes `7-compress.jpg` … `15-favicons.jpg`
 - Small promo tile, 440×280: `docs/store/promo-small-440x280.jpg`
 - Marquee, 1400×560: `docs/store/promo-marquee-1400x560.jpg`
 - Regenerate all of them with `python3 scripts/store_assets.py` (uses the installed Chrome headless; the plain app

@@ -98,6 +98,7 @@ const SHOTS = {
   async crop() { drop([await photo("sunset.jpg", 2000, 760)]); await until(() => $(".crop-stage canvas, .crop-stage img")); setInput("Aspect ratio", String(16 / 9)); await sleep(400); return 0; },
   async compress() { drop([await photo()]); await until(() => $(".options")); setInput("Quality", "70"); await run(); },
   async adjust() { drop([await photo("sunset.jpg"), await photo("harbour.jpg"), await photo("dunes.jpg")]); await until(() => $(".options canvas.preview")); setInput("Look", "vivid"); await sleep(500); return $(".options").offsetTop - 70; },
+  async collage() { drop([await photo("sunset.jpg"), await photo("harbour.jpg", 1200, 1600), await photo("dunes.jpg", 1600, 1000), await photo("lake.jpg", 1400, 1400)]); await until(() => $(".options")); setInput("Columns", "2"); setInput("Cell size (px)", "400"); setInput("Background", "#1b1f27"); await run(); return $(".options").offsetTop - 70; },
   async pipeline() {
     drop([await photo("sunset.jpg"), await photo("harbour.jpg"), await photo("dunes.jpg")]);
     await until(() => $("select[aria-label='Add a step']"));

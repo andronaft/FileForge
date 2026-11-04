@@ -1300,4 +1300,282 @@ const qrTool = {
   },
 };
 
-export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, heicTool, adjustTool, frameTool, watermarkTool, redactTool, metadataTool, paletteTool, faviconTool, qrTool];
+// ---------- collage / contact sheet ----------
+
+function fitBox(sw, sh, cw, ch, mode) {
+  const k = mode === "cover" ? Math.max(cw / sw, ch / sh) : Math.min(cw / sw, ch / sh);
+  return { w: sw * k, h: sh * k };
+}
+
+const collageTool = {
+  id: "collage",
+  title: "Collage & contact sheet",
+  description: "Put many photos on one image: a grid with equal cells, a gap, a background colour and optional file names, like a contact sheet or a before/after pair.",
+  keywords: ["grid", "contact sheet", "montage", "combine", "join", "side by side", "before after", "mosaic"],
+  accept: "image/*",
+  hint: "Two or more images — the order of the list is the order in the grid",
+  runLabel: "Build collage",
+  renderOptions(root, files) {
+    const cols = select([["auto", "Auto"], ["1", "1"], ["2", "2"], ["3", "3"], ["4", "4"], ["5", "5"], ["6", "6"]], "auto");
+    const cell = number(600, { min: 50, max: 4000 }), fit = select([["cover", "Fill the cell (crop)"], ["contain", "Fit inside (letterbox)"]], "cover");
+    const gap = number(12, { min: 0, max: 500 }), bg = el("input", { type: "color", value: "#ffffff" });
+    const labels = checkbox("Write file names under the images", false), radius = number(0, { min: 0, max: 200 });
+    const fq = formatQualityRow("jpeg");
+    const stat = el("div", { class: "stat" });
+    root.append(
+      el("div", { class: "row" }, [field("Columns", cols), field("Cell size (px)", cell), field("Images in the cell", fit)]),
+      el("div", { class: "row" }, [field("Gap (px)", gap), field("Background", bg), field("Corner radius (px)", radius), labels.label]),
+      stat, fq.row,
+    );
+    const o = () => ({ cols: cols.value, cell: Number(cell.value) || 600, fit: fit.value, gap: Number(gap.value) || 0, bg: bg.value, labels: labels.input.checked, radius: Number(radius.value) || 0 });
+    const describe = () => { const n = files.length, c = o().cols === "auto" ? Math.ceil(Math.sqrt(n)) : Number(o().cols); const r = Math.ceil(n / c); stat.textContent = t("{n} images → {cols} × {rows} grid, about {w} × {h} px", { n, cols: c, rows: r, w: c * o().cell + (c + 1) * o().gap, h: r * o().cell + (r + 1) * o().gap + (o().labels ? r * Math.round(o().cell * 0.08) : 0) }); };
+    for (const i of [cols, cell, gap, labels.input]) { i.addEventListener("input", describe); i.addEventListener("change", describe); }
+    describe();
+    this.opts = o; this.fq = fq;
+  },
+  async run(files, _root, progress) {
+    if (files.length < 2) throw new Error("Add at least two images");
+    const v = this.opts();
+    const n = files.length, cols = v.cols === "auto" ? Math.ceil(Math.sqrt(n)) : Number(v.cols), rows = Math.ceil(n / cols);
+    const label = v.labels ? Math.round(v.cell * 0.08) : 0;
+    const c = makeCanvas(cols * v.cell + (cols + 1) * v.gap, rows * (v.cell + label) + (rows + 1) * v.gap);
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = v.bg; ctx.fillRect(0, 0, c.width, c.height);
+    progress?.start(n);
+    for (const [i, file] of files.entries()) {
+      await progress?.tick(file.name);
+      const img = await loadImage(file);
+      const d = dims(img);
+      const x0 = v.gap + (i % cols) * (v.cell + v.gap), y0 = v.gap + Math.floor(i / cols) * (v.cell + label + v.gap);
+      const { w, h } = fitBox(d.w, d.h, v.cell, v.cell, v.fit);
+      ctx.save();
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x0, y0, v.cell, v.cell, v.radius); else ctx.rect(x0, y0, v.cell, v.cell);
+      ctx.clip();
+      ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(img, x0 + (v.cell - w) / 2, y0 + (v.cell - h) / 2, w, h);
+      ctx.restore();
+      if (label) {
+        ctx.fillStyle = luminance(v.bg) > 0.5 ? "#222" : "#eee";
+        ctx.font = `${Math.round(label * 0.55)}px -apple-system, "Segoe UI", Helvetica, Arial, sans-serif`;
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(ellipsize(ctx, baseName(file.name), v.cell - 8), x0 + v.cell / 2, y0 + v.cell + label / 2);
+      }
+      if (img.close) img.close();
+    }
+    const mime = this.fq.format === "keep" ? "image/jpeg" : MIME[this.fq.format];
+    return [{ name: `collage.${EXT[mime]}`, blob: await encode(c, mime, this.fq.quality / 100), note: t("{n} images · {w} × {h}", { n, w: c.width, h: c.height }) }];
+  },
+};
+function luminance(hex) { const n = parseInt(hex.slice(1), 16); return (0.2126 * (n >> 16) + 0.7152 * ((n >> 8) & 255) + 0.0722 * (n & 255)) / 255; }
+function ellipsize(ctx, text, max) { if (ctx.measureText(text).width <= max) return text; while (text.length > 1 && ctx.measureText(text + "…").width > max) text = text.slice(0, -1); return text + "…"; }
+
+// ---------- split into tiles ----------
+
+const splitImageTool = {
+  id: "split-image",
+  title: "Split into tiles",
+  description: "Cut an image into a grid of equal tiles (3 × 3 for an Instagram grid, 2 × 1 for a wide banner) or into tiles of a fixed pixel size.",
+  keywords: ["tiles", "grid", "instagram", "slice", "cut", "pieces", "puzzle", "sprite"],
+  accept: "image/*",
+  hint: "JPG, PNG, WebP — multiple files allowed",
+  runLabel: "Split image",
+  renderOptions(root, files) {
+    const mode = select([["grid", "Rows × columns"], ["size", "Tile size in pixels"]], "grid");
+    const rows = number(3, { min: 1, max: 50 }), cols = number(3, { min: 1, max: 50 });
+    const tw = number(512, { min: 16, max: 8000 }), th = number(512, { min: 16, max: 8000 });
+    const order = select([["rows", "Row by row (1-1, 1-2, 2-1…)"], ["cols", "Column by column"]], "rows");
+    const fq = formatQualityRow("keep");
+    const gridRow = el("div", { class: "row" }, [field("Rows", rows), field("Columns", cols)]);
+    const sizeRow = el("div", { class: "row", hidden: true }, [field("Tile width (px)", tw), field("Tile height (px)", th)]);
+    const stat = el("div", { class: "stat" });
+    root.append(el("div", { class: "row" }, [field("Split by", mode), field("Numbering", order)]), gridRow, sizeRow, stat, fq.row);
+    const describe = async () => {
+      gridRow.hidden = mode.value !== "grid"; sizeRow.hidden = mode.value !== "size";
+      try { const d = await sizeOf(files[0]); const g = gridFor(d, this.opts()); stat.textContent = t("{name}: {cols} × {rows} tiles of {w} × {h} px", { name: files[0].name, cols: g.cols, rows: g.rows, w: g.w, h: g.h }); } catch (_) { /* ignore */ }
+    };
+    this.opts = () => ({ mode: mode.value, rows: Number(rows.value) || 1, cols: Number(cols.value) || 1, tw: Number(tw.value) || 512, th: Number(th.value) || 512, order: order.value });
+    this.fq = fq;
+    for (const i of [mode, rows, cols, tw, th]) { i.addEventListener("input", describe); i.addEventListener("change", describe); }
+    describe();
+  },
+  async run(files, _root, progress) {
+    const v = this.opts(), out = [];
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const img = await loadImage(file);
+      const g = gridFor(dims(img), v);
+      const mime = this.fq.format === "keep" ? (formatOf(file) || "image/png") : MIME[this.fq.format];
+      const cells = [];
+      for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) cells.push([r, c]);
+      if (v.order === "cols") cells.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+      for (const [r, c] of cells) {
+        const w = Math.min(g.w, dims(img).w - c * g.w), h = Math.min(g.h, dims(img).h - r * g.h);
+        const tile = cropStage(img, { x: c * g.w, y: r * g.h, w, h });
+        out.push({ name: `${baseName(file.name)}-${r + 1}-${c + 1}.${EXT[mime]}`, blob: await encode(tile, mime, this.fq.quality / 100), note: `${w} × ${h}` });
+      }
+      if (img.close) img.close();
+    }
+    return out;
+  },
+};
+function gridFor(d, v) {
+  if (v.mode === "size") { const w = Math.min(v.tw, d.w), h = Math.min(v.th, d.h); return { cols: Math.ceil(d.w / w), rows: Math.ceil(d.h / h), w, h }; }
+  return { cols: v.cols, rows: v.rows, w: Math.floor(d.w / v.cols), h: Math.floor(d.h / v.rows) };
+}
+
+// ---------- compare two images ----------
+
+/** Pixel difference of two same-size canvases; returns {count, total, mask: ImageData of flagged pixels}. */
+function diffPixels(a, b, tolerance) {
+  const w = a.width, h = a.height;
+  const da = a.getContext("2d").getImageData(0, 0, w, h).data, db = b.getContext("2d").getImageData(0, 0, w, h).data;
+  const mask = new Uint8Array(w * h);
+  let count = 0;
+  const lim = tolerance * tolerance * 3;
+  for (let i = 0, p = 0; i < da.length; i += 4, p++) {
+    const dr = da[i] - db[i], dg = da[i + 1] - db[i + 1], dbb = da[i + 2] - db[i + 2], dA = da[i + 3] - db[i + 3];
+    if (dr * dr + dg * dg + dbb * dbb + dA * dA > lim) { mask[p] = 1; count++; }
+  }
+  return { count, total: w * h, mask, w, h };
+}
+function toCanvasSized(img, w, h) { const c = makeCanvas(w, h); const ctx = c.getContext("2d"); ctx.imageSmoothingQuality = "high"; ctx.drawImage(img, 0, 0, w, h); return c; }
+function paintDiff(a, b, d, o) {
+  const { w, h } = d;
+  const c = makeCanvas(o.layout === "side" ? w * 3 + 2 * o.gap : w, h);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+  const marks = makeCanvas(w, h), mctx = marks.getContext("2d");
+  const [r, g, bl] = [1, 3, 5].map((i) => parseInt(o.color.slice(i, i + 2), 16));
+  const id = mctx.createImageData(w, h);
+  for (let p = 0; p < d.mask.length; p++) if (d.mask[p]) { id.data[p * 4] = r; id.data[p * 4 + 1] = g; id.data[p * 4 + 2] = bl; id.data[p * 4 + 3] = 255; }
+  mctx.putImageData(id, 0, 0);
+  if (o.layout === "side") {
+    ctx.drawImage(a, 0, 0); ctx.drawImage(b, w + o.gap, 0);
+    const x = 2 * (w + o.gap);
+    ctx.globalAlpha = 0.25; ctx.drawImage(a, x, 0); ctx.globalAlpha = 1; ctx.drawImage(marks, x, 0);
+  } else if (o.layout === "mask") {
+    ctx.drawImage(marks, 0, 0);
+  } else {
+    ctx.globalAlpha = 0.3; ctx.drawImage(a, 0, 0); ctx.globalAlpha = 1; ctx.drawImage(marks, 0, 0);
+  }
+  return c;
+}
+
+const compareTool = {
+  id: "image-compare",
+  title: "Compare images",
+  description: "Spot the difference between two screenshots or renders: the changed pixels are highlighted, counted and shown as a percentage. Different sizes are scaled to match.",
+  keywords: ["diff", "difference", "pixel", "screenshot", "visual regression", "spot", "changes", "overlay"],
+  accept: "image/*",
+  hint: "Exactly two images: before and after",
+  runLabel: "Compare",
+  renderOptions(root, files) {
+    const tolerance = el("input", { type: "range", min: 0, max: 80, value: 16 }), tl = el("span", { class: "stat", text: "16" });
+    tolerance.addEventListener("input", () => { tl.textContent = tolerance.value; });
+    const layout = select([["highlight", "Highlight on the first image"], ["side", "Side by side: A, B, difference"], ["mask", "Changed pixels only"]], "highlight");
+    const color = el("input", { type: "color", value: "#ff2d55" });
+    const stat = el("div", { class: "stat" }), preview = el("canvas", { class: "preview" });
+    root.append(el("div", { class: "row" }, [field("Tolerance", el("div", { class: "row" }, [tolerance, tl]), "0 flags the slightest change; 20–30 ignores JPEG noise"), field("Output", layout), field("Highlight colour", color)]), stat, el("div", { class: "preview-wrap" }, [preview]));
+    this.opts = () => ({ tolerance: Number(tolerance.value), layout: layout.value, color: color.value, gap: 16 });
+    let small = null, timer = null;
+    const paint = () => { if (!small) return; const o = this.opts(); const d = diffPixels(small.a, small.b, o.tolerance); const c = paintDiff(small.a, small.b, d, { ...o, gap: 6 }); preview.width = c.width; preview.height = c.height; preview.getContext("2d").drawImage(c, 0, 0); stat.textContent = t("{pct}% of pixels differ ({n} of {total}) at preview size", { pct: ((100 * d.count) / d.total).toFixed(2), n: d.count.toLocaleString(), total: d.total.toLocaleString() }); };
+    const schedule = () => { clearTimeout(timer); timer = setTimeout(paint, 80); };
+    for (const i of [tolerance, layout, color]) { i.addEventListener("input", schedule); i.addEventListener("change", schedule); }
+    if (files.length >= 2) Promise.all([loadImage(files[0]), loadImage(files[1])]).then(([a, b]) => { const d = dims(a); const k = Math.min(1, 480 / d.w, 320 / d.h); small = { a: toCanvasSized(a, Math.round(d.w * k), Math.round(d.h * k)), b: toCanvasSized(b, Math.round(d.w * k), Math.round(d.h * k)) }; if (a.close) a.close(); if (b.close) b.close(); paint(); }).catch((err) => toast(err.message, "error"));
+    else stat.textContent = t("Add a second image to compare");
+  },
+  async run(files, _root, progress) {
+    if (files.length < 2) throw new Error("Add two images to compare");
+    const o = this.opts();
+    await progress?.tick(files[0].name);
+    const [a, b] = await Promise.all([loadImage(files[0]), loadImage(files[1])]);
+    const da = dims(a), db = dims(b);
+    const ca = toCanvasSized(a, da.w, da.h), cb = toCanvasSized(b, da.w, da.h);
+    if (a.close) a.close(); if (b.close) b.close();
+    const d = diffPixels(ca, cb, o.tolerance);
+    const c = paintDiff(ca, cb, d, o);
+    const pct = ((100 * d.count) / d.total).toFixed(2);
+    const scaled = da.w !== db.w || da.h !== db.h ? t(" · second image scaled from {w} × {h}", { w: db.w, h: db.h }) : "";
+    return [{ name: `${baseName(files[0].name)}-vs-${baseName(files[1].name)}.png`, blob: await encode(c, "image/png"), note: t("{pct}% differ · {n} pixels", { pct, n: d.count.toLocaleString() }) + scaled }];
+  },
+};
+
+// ---------- SVG to PNG / JPEG / WebP ----------
+
+function svgSize(text) {
+  const open = text.match(/<svg\b[^>]*>/i);
+  if (!open) throw new Error("Not an SVG file");
+  const attrs = open[0];
+  const num = (name) => { const m = attrs.match(new RegExp(`\\s${name}\\s*=\\s*["']\\s*([\\d.]+)`, "i")); return m ? Number(m[1]) : 0; };
+  const vb = attrs.match(/viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i);
+  let w = num("width"), h = num("height");
+  if ((!w || !h) && vb) { const vw = Number(vb[1]), vh = Number(vb[2]); if (w && !h) h = (w * vh) / vw; else if (h && !w) w = (h * vw) / vh; else { w = vw; h = vh; } }
+  if (!w || !h) { w = 300; h = 150; }
+  return { w, h, open: open[0], attrs };
+}
+async function rasterizeSvg(text, w, h) {
+  const { open, attrs } = svgSize(text);
+  const fixed = text.replace(open, attrs.replace(/\s(width|height)\s*=\s*["'][^"']*["']/gi, "").replace(/<svg\b/i, `<svg width="${w}" height="${h}"`));
+  const url = URL.createObjectURL(new Blob([fixed], { type: "image/svg+xml" }));
+  try {
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = () => rej(new Error("The browser could not render this SVG")); img.src = url; });
+    const c = makeCanvas(w, h);
+    c.getContext("2d").drawImage(img, 0, 0, w, h);
+    return c;
+  } finally { URL.revokeObjectURL(url); }
+}
+
+const svgTool = {
+  id: "svg-raster",
+  title: "SVG to PNG",
+  description: "Render an SVG at any size as PNG, JPEG or WebP — exact pixels, a scale factor, or 1×/2×/3× sets for app icons and the web, with a transparent or solid background.",
+  keywords: ["svg", "vector", "rasterize", "render", "png", "export", "icon", "2x", "retina"],
+  accept: ".svg,image/svg+xml",
+  hint: "SVG files — multiple files allowed",
+  runLabel: "Render",
+  renderOptions(root, files) {
+    const mode = select([["width", "Width in pixels"], ["height", "Height in pixels"], ["scale", "Scale factor"]], "width");
+    const size = number(1024, { min: 1, max: 10000 }), scale = number(2, { min: 0.1, max: 20, step: 0.5 });
+    const sets = checkbox("Also 2× and 3× (@2x, @3x)", false);
+    const bgMode = select([["transparent", "Transparent"], ["colour", "Solid colour"]], "transparent"), bg = el("input", { type: "color", value: "#ffffff" });
+    const fq = formatQualityRow("png");
+    const sizeF = field("Size", size), scaleF = field("Scale", scale);
+    const stat = el("div", { class: "stat" });
+    root.append(el("div", { class: "row" }, [field("Size by", mode), sizeF, scaleF, sets.label]), el("div", { class: "row" }, [field("Background", bgMode), field("Colour", bg)]), stat, fq.row);
+    const describe = async () => {
+      sizeF.hidden = mode.value === "scale"; scaleF.hidden = mode.value !== "scale";
+      try { const s = svgSize(await files[0].text()); const t0 = targetSize(s, this.opts()); stat.textContent = t("{name}: {w} × {h} → {tw} × {th} px", { name: files[0].name, w: Math.round(s.w), h: Math.round(s.h), tw: t0.w, th: t0.h }); } catch (err) { stat.textContent = err.message; }
+    };
+    this.opts = () => ({ mode: mode.value, size: Number(size.value) || 1024, scale: Number(scale.value) || 1, sets: sets.input.checked, bg: bgMode.value === "colour" ? bg.value : null });
+    this.fq = fq;
+    for (const i of [mode, size, scale]) { i.addEventListener("input", describe); i.addEventListener("change", describe); }
+    describe();
+  },
+  async run(files, _root, progress) {
+    const v = this.opts(), out = [];
+    const mime = this.fq.format === "keep" ? "image/png" : MIME[this.fq.format];
+    for (const file of files) {
+      await progress?.tick(file.name);
+      const text = await file.text();
+      const s = svgSize(text);
+      const base = targetSize(s, v);
+      for (const k of v.sets ? [1, 2, 3] : [1]) {
+        const w = base.w * k, h = base.h * k;
+        let c = await rasterizeSvg(text, w, h);
+        if (v.bg) { const f = makeCanvas(w, h); const ctx = f.getContext("2d"); ctx.fillStyle = v.bg; ctx.fillRect(0, 0, w, h); ctx.drawImage(c, 0, 0); c = f; }
+        out.push({ name: `${baseName(file.name)}${k > 1 ? `@${k}x` : ""}.${EXT[mime]}`, blob: await encode(c, mime, this.fq.quality / 100), note: `${w} × ${h}` });
+      }
+    }
+    return out;
+  },
+};
+function targetSize(s, v) {
+  const ratio = s.w / s.h;
+  if (v.mode === "height") return { w: Math.max(1, Math.round(v.size * ratio)), h: Math.max(1, Math.round(v.size)) };
+  if (v.mode === "scale") return { w: Math.max(1, Math.round(s.w * v.scale)), h: Math.max(1, Math.round(s.h * v.scale)) };
+  return { w: Math.max(1, Math.round(v.size)), h: Math.max(1, Math.round(v.size / ratio)) };
+}
+
+export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, svgTool, heicTool, adjustTool, frameTool, collageTool, splitImageTool, compareTool, watermarkTool, redactTool, metadataTool, paletteTool, faviconTool, qrTool];

@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.1.0
+
+### Added
+
+- **Collage & contact sheet**: many photos on one image in a grid with a gap, background colour, rounded cells
+  and optional file names.
+- **Split into tiles**: cut an image into rows × columns (Instagram grids, banners) or tiles of a fixed size.
+- **Compare images**: pixel diff of two screenshots or renders with a tolerance slider, highlighted changes,
+  a percentage and a side-by-side export; different sizes are scaled to match.
+- **SVG to PNG**: render SVG at an exact width, height or scale as PNG, JPEG or WebP, with 1×/2×/3× sets and
+  a transparent or solid background.
+- **Rename files** (new *Files* group): batch rename with `{name}`, `{n}`, `{date}`, `{time}` and `{ext}`
+  patterns, a padded counter, find and replace (plain or regex), letter case and Latin-only transliteration
+  (Ukrainian and Russian Cyrillic) for uploads; download one by one or as a zip.
+- **Booklet**: saddle-stitch imposition for double-sided printing, A4 / Letter / A3 or the page size doubled,
+  left or right binding, gutter and fold line.
+- **Fill PDF form**: the text fields, checkboxes, radio groups, dropdowns and lists of a fillable PDF become
+  a form in the app; save filled or flattened. Cyrillic answers use the bundled font.
+- **Colour converter & contrast**: HEX / RGB / HSL / HSV, tints, shades and the complement as swatches and
+  CSS variables, WCAG contrast ratio with AA / AAA verdicts for normal and large text.
+- **Table converter**: CSV, TSV, Markdown, HTML or JSON in; Markdown table, CSV, TSV, HTML, JSON (objects or
+  rows) or SQL INSERTs out, with numeric columns right-aligned in Markdown.
+- **Favourites**: a star on every tool card and tool page pins it to a Favourites section on the home page
+  and at the top of the sidebar.
+
+### Changed
+
+- 51 tools in total (was 42). Collage and Split into tiles can be steps of a Pipeline.
+
 ## 1.0.0
 
 ### Added

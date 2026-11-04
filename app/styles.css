@@ -155,6 +155,12 @@ select { padding-right: 28px; appearance: none; background-image: linear-gradien
 .tool-head-icon { flex: none; width: 46px; height: 46px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: var(--accent-soft); color: var(--accent-2); }
 .tool-head h1 { margin: 0 0 2px; font-size: 24px; letter-spacing: -.01em; }
 .tool-head p { margin: 0; color: var(--muted); }
+.tool-head-text { flex: 1; min-width: 0; }
+.fav-btn { flex: none; color: var(--muted); }
+.fav-btn[aria-pressed="true"] { color: #f5a623; }
+.fav-btn[aria-pressed="true"] .ic { fill: #f5a623; }
+.tool-card .fav-btn { align-self: flex-start; margin: -4px -4px 0 auto; opacity: 0; }
+.tool-card:hover .fav-btn, .tool-card .fav-btn:focus-visible, .tool-card .fav-btn[aria-pressed="true"] { opacity: 1; }
 
 .dropzone {
   border: 2px dashed var(--border);
@@ -271,6 +277,16 @@ table.meta td { padding: 3px 0; word-break: break-word; }
 .regex-out { white-space: pre-wrap; word-break: break-word; font: 13px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--border); border-radius: var(--radius-s); padding: 10px; max-height: 360px; overflow: auto; background: var(--surface); }
 .qr-preview { background: #fff; padding: 12px; border-radius: var(--radius-s); border: 1px solid var(--border); display: inline-block; }
 .qr-preview img, .qr-preview canvas { display: block; }
+.form-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 14px; }
+.form-fields .field { min-width: 0; }
+.table-wrap { max-height: 360px; overflow: auto; }
+.table-wrap table.meta th { max-width: 320px; white-space: normal; word-break: break-all; }
+.contrast { display: flex; flex-direction: column; gap: 8px; }
+.contrast-sample { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: var(--radius-s); border: 1px solid var(--border); }
+.contrast-sample strong { font-size: 24px; }
+.badge { display: inline-block; padding: 0 6px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.badge.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+.badge.bad { background: color-mix(in srgb, #e5484d 18%, transparent); color: #e5484d; }
 .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
 .stats div { background: var(--surface-2); border-radius: var(--radius-s); padding: 8px 10px; }
 .stats b { display: block; font-size: 20px; }

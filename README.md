@@ -8,7 +8,7 @@
 [![CI](https://github.com/andronaft/FileForge/actions/workflows/ci.yml/badge.svg)](https://github.com/andronaft/FileForge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 26 tools, everything runs on your device. Nothing is uploaded anywhere.
+Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 51 tools, everything runs on your device. Nothing is uploaded anywhere.
 
 ## Install
 
@@ -28,7 +28,7 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 
 ## Tools
 
-42 tools, all running in the page. Open the app and press **⌘K / Ctrl+K** to search them.
+51 tools, all running in the page. Open the app and press **⌘K / Ctrl+K** to search them.
 
 | Group | Tool | What it does |
 | --- | --- | --- |
@@ -37,9 +37,13 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Images | Rotate & flip | 90° / 180° / 270°, mirror horizontally or vertically, batch |
 | Images | Compress | Live before/after preview with the resulting size, quality slider, target size in KB, optional max dimension |
 | Images | Convert | JPEG ⇄ PNG ⇄ WebP (GIF, BMP, SVG, AVIF accepted as input) |
+| Images | SVG to PNG | Render SVG at an exact width, height or scale, 1×/2×/3× sets, transparent or solid background, PNG / JPEG / WebP |
 | Images | HEIC to JPG | iPhone HEIC/HEIF → JPEG, PNG or WebP (libheif in a sandboxed frame) |
 | Images | Adjust | Brightness, contrast, saturation, hue, blur, sharpen, grayscale, sepia; one-click looks; live preview; batch |
 | Images | Frame, padding & corners | Coloured or transparent margin, border, rounded corners, soft shadow |
+| Images | Collage & contact sheet | Many photos in one grid with a gap, background, rounded cells and optional file names |
+| Images | Split into tiles | Rows × columns (Instagram grid, banners) or tiles of a fixed size |
+| Images | Compare images | Pixel diff of two screenshots with tolerance, highlighted changes, a percentage and a side-by-side export |
 | Images | Watermark | Text in a corner, centred, or tiled diagonally, with live preview |
 | Images | Redact | Black out, pixelate or blur parts of a screenshot or photo, as many boxes as you need |
 | Images | Remove metadata | Shows camera, date, exposure and GPS (with a map link), then strips EXIF, GPS, XMP, IPTC and comments without re-encoding |
@@ -53,9 +57,11 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | PDF | Delete pages | Remove listed pages |
 | PDF | Crop pages | Trim margins by millimetres or auto-detect the printed area |
 | PDF | Pages per sheet | 2, 4, 6, 9 or 16 pages per A4 / Letter / A3 sheet, or 1 per sheet to re-flow page sizes |
+| PDF | Booklet | Saddle-stitch imposition for double-sided printing, left or right binding, gutter and fold line |
 | PDF | Page numbers | Header or footer, several formats, custom start |
 | PDF | Watermark | Diagonal text such as DRAFT or CONFIDENTIAL on every page |
 | PDF | Stamp image or signature | PNG/JPG on all, first, last or chosen pages; position, size, opacity |
+| PDF | Fill PDF form | Text fields, checkboxes, radio groups and dropdowns of a fillable PDF; save filled or flattened |
 | PDF | Compress | Lossless (compact structure, drop metadata, text stays) or re-render pages as JPEG for scans |
 | PDF | Remove metadata | Shows and strips title, author, software, dates, keywords and XMP |
 | PDF | Images to PDF | One image per page, fit-to-image or A4 / Letter with margins |
@@ -65,6 +71,7 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Text & data | Markdown to PDF | Live preview, three stylesheets, A4 / Letter, print-to-PDF or HTML download |
 | Text & data | Markdown to HTML | Standalone page with a stylesheet or a bare HTML fragment |
 | Text & data | CSV ⇄ JSON | Auto-detects direction and delimiter, handles quoted cells |
+| Text & data | Table converter | CSV / TSV / Markdown / HTML / JSON in; Markdown table, CSV, TSV, HTML, JSON or SQL INSERTs out |
 | Text & data | JSON format | Pretty / minify, sort keys, points at the exact error position |
 | Text & data | Base64 | Encode text or any file (optionally as a data: URL), decode to text or file |
 | Text & data | Text diff | Line-by-line comparison of two texts or files, unified .diff export |
@@ -73,11 +80,13 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Text & data | JWT decoder | Header, payload, readable dates, expiry check, optional HS256/384/512 verification |
 | Text & data | URL encode, decode & parse | Percent-encoding both ways, URL parts and query parameters in a table |
 | Text & data | Regex tester | Live highlighted matches, groups, replacement preview |
+| Text & data | Colour converter & contrast | HEX / RGB / HSL / HSV, tints, shades, complement, CSS variables, WCAG contrast with AA / AAA verdicts |
+| Files | Rename files | Batch rename with {name} {n} {date} {time} {ext} patterns, find & replace (regex), case, Latin-only transliteration |
 | Batch | Pipeline | Chain tools (resize → adjust → watermark → compress, merge → page numbers → compress) and run them on every file |
 
 Results can be previewed in place, handed straight to another tool ("Continue with"), downloaded as a single ZIP or copied to the clipboard. The file list shows thumbnails and can be reordered by dragging or sorted by name or date. Images can be pasted from the clipboard, dropped anywhere on the page, or opened from the OS "Open with" menu when the web version is installed as an app. Batches show a progress bar with a Cancel button, Ctrl/⌘+Enter runs the tool, and every tool remembers the options you used last time.
 
-The interface is in English and Ukrainian (picked from the browser language, switchable in Settings), with a light and a dark theme, a home page with every tool, a command palette (⌘K), keyboard shortcuts (`?`) and a compact layout for the browser's side panel.
+The interface is in English and Ukrainian (picked from the browser language, switchable in Settings), with a light and a dark theme, a home page with every tool, a command palette (⌘K), keyboard shortcuts (`?`), favourite tools pinned to the home page and sidebar, and a compact layout for the browser's side panel.
 
 ## Run from source (unpacked)
 
@@ -115,11 +124,12 @@ app/app.js           Home page, search, router, drop zone, file list, results, s
 app/i18n.js, app/i18n/uk.js  UI language: English strings in the code, Ukrainian dictionary
 app/icons.js         Inline SVG icons
 app/util.js          Shared helpers (download, zip, page ranges, widgets)
-app/tools/image.js   Canvas-based image pipeline and the image tools (incl. adjust, frame, palette, QR)
+app/tools/image.js   Canvas-based image pipeline and the image tools (incl. adjust, frame, collage, compare, SVG, QR)
 app/tools/pdf.js     PDF tools built on pdf-lib and pdf.js
 app/tools/markdown.js Markdown → PDF / HTML using marked
-app/tools/data.js    CSV ⇄ JSON, JSON format, Base64
-app/tools/text.js    Diff, checksums, word count & case, JWT, URL, regex
+app/tools/data.js    CSV ⇄ JSON, table converter, JSON format, Base64
+app/tools/text.js    Diff, checksums, word count & case, JWT, URL, regex, colour
+app/tools/files.js   Rename files
 app/tools/pipeline.js Chains other tools
 app/heic-sandbox.*   Sandboxed page that runs heic2any (needs eval)
 scripts/package.py   Builds Chrome and Firefox zips

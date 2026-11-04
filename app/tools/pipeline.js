@@ -3,7 +3,7 @@ import { el, select, guessType, plural, toast, t } from "../util.js";
 import { icon } from "../icons.js";
 
 let registry = [];
-const NOT_CHAINABLE = new Set(["pipeline", "redact", "pdf-reorder", "favicons", "pdf-stamp", "palette", "qr", "crop"]);
+const NOT_CHAINABLE = new Set(["pipeline", "redact", "pdf-reorder", "favicons", "pdf-stamp", "palette", "qr", "crop", "image-compare", "svg-raster", "pdf-form", "rename"]);
 const OUTPUT_KIND = { "images-to-pdf": "pdf", "pdf-to-images": "image", "pdf-to-text": "text", "pdf-extract-images": "image" };
 
 function kindOf(tool) {

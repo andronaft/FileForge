@@ -1087,4 +1087,136 @@ const extractImagesTool = {
   },
 };
 
-export const pdfTools = [mergeTool, splitTool, reorderTool, rotatePdfTool, deletePagesTool, cropPdfTool, nupTool, pageNumbersTool, watermarkPdfTool, stampTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, extractImagesTool, pdfToTextTool];
+// ---------- booklet imposition ----------
+
+/** Sheet sides for saddle-stitch printing: [[left, right], …] of 0-based page indices (null = blank), n a multiple of 4. */
+export function bookletOrder(n, rtl = false) {
+  const sides = [];
+  for (let i = 0; i < n / 2; i++) {
+    const pair = i % 2 === 0 ? [n - 1 - i, i] : [i, n - 1 - i]; // front: last|first, back: second|second-to-last
+    sides.push(rtl ? pair.reverse() : pair);
+  }
+  return sides;
+}
+
+const bookletTool = {
+  id: "pdf-booklet",
+  title: "Booklet",
+  description: "Re-order and pair pages so that a double-sided print folds into a booklet: 2 pages per side, blank pages added to a multiple of 4. Print on both sides, flip on the short edge, fold, staple.",
+  keywords: ["imposition", "saddle stitch", "fold", "zine", "print", "brochure", "2-up", "duplex"],
+  accept: "application/pdf,.pdf",
+  multiple: false,
+  hint: "One PDF",
+  runLabel: "Make booklet",
+  renderOptions(root, files) {
+    const sheet = select([["a4", "A4"], ["letter", "Letter"], ["a3", "A3"], ["same", "Same as the pages (2 × width)"]], "a4");
+    const binding = select([["left", "Left (Latin, Cyrillic)"], ["right", "Right (Arabic, Hebrew, manga)"]], "left");
+    const margin = number(8, { min: 0, max: 50 }), gutter = number(6, { min: 0, max: 50 });
+    const line = checkbox("Dotted fold line", true);
+    const stat = el("div", { class: "stat" });
+    root.append(el("div", { class: "row" }, [field("Sheet size", sheet), field("Binding edge", binding), field("Margin (mm)", margin), field("Gutter at the fold (mm)", gutter), line.label]), stat);
+    this.opts = { sheet, binding, margin, gutter, line };
+    pageCount(files[0]).then((n) => { const total = Math.ceil(n / 4) * 4; stat.textContent = t("{pages} pages → {sheets} sheets ({blank} blank pages added)", { pages: n, sheets: total / 4, blank: total - n }); }).catch(() => {});
+  },
+  async run(files, _root, progress) {
+    const o = this.opts, file = files[0];
+    await progress?.tick(file.name);
+    const src = await loadPdf(file);
+    const n = src.getPageCount(), total = Math.ceil(n / 4) * 4;
+    const doc = await PDFDocument.create();
+    const embedded = await doc.embedPdf(await src.save(), Array.from({ length: n }, (_, i) => i));
+    const first = src.getPage(0).getSize();
+    let sw, sh;
+    if (o.sheet.value === "same") { sw = first.width * 2; sh = first.height; }
+    else { const base = o.sheet.value === "letter" ? PageSizes.Letter : o.sheet.value === "a3" ? PageSizes.A3 : PageSizes.A4; [sw, sh] = [base[1], base[0]]; }
+    const m = Number(o.margin.value) * MM, g = Number(o.gutter.value) * MM;
+    const cw = sw / 2 - m - g, ch = sh - 2 * m;
+    for (const side of bookletOrder(total, o.binding.value === "right")) {
+      const page = doc.addPage([sw, sh]);
+      side.forEach((idx, k) => {
+        if (idx >= n) return;
+        const ep = embedded[idx];
+        const scale = Math.min(cw / ep.width, ch / ep.height);
+        const w = ep.width * scale, h = ep.height * scale;
+        const x = k === 0 ? sw / 2 - g - w : sw / 2 + g;
+        page.drawPage(ep, { x, y: (sh - h) / 2, width: w, height: h });
+      });
+      if (o.line.input.checked) page.drawLine({ start: { x: sw / 2, y: m / 2 }, end: { x: sw / 2, y: sh - m / 2 }, thickness: 0.4, color: rgb(0.6, 0.6, 0.6), dashArray: [3, 3] });
+    }
+    return [{ name: `${baseName(file.name)}-booklet.pdf`, blob: pdfBlob(await doc.save()), note: t("{sheets} sheets · print double-sided, flip on the short edge", { sheets: total / 4 }) }];
+  },
+};
+
+// ---------- fill and flatten forms ----------
+
+function fieldKind(f) {
+  const L = PDFLib;
+  if (f instanceof L.PDFTextField) return "text";
+  if (f instanceof L.PDFCheckBox) return "check";
+  if (f instanceof L.PDFRadioGroup) return "radio";
+  if (f instanceof L.PDFDropdown) return "dropdown";
+  if (f instanceof L.PDFOptionList) return "list";
+  return "other";
+}
+
+const formTool = {
+  id: "pdf-form",
+  title: "Fill PDF form",
+  description: "Type into the fields of a fillable PDF (text, checkboxes, choices) and save it, optionally flattened so the answers become part of the page and can no longer be edited.",
+  keywords: ["form", "fields", "fill", "flatten", "acroform", "checkbox", "application", "sign"],
+  accept: "application/pdf,.pdf",
+  multiple: false,
+  hint: "One PDF with form fields",
+  runLabel: "Save PDF",
+  renderOptions(root, files) {
+    root.dataset.noremember = "";
+    const flatten = checkbox("Flatten: make the fields read-only", false);
+    const stat = el("div", { class: "stat", text: "Reading the form…" });
+    const list = el("div", { class: "form-fields" });
+    root.append(el("div", { class: "row" }, [flatten.label]), stat, list);
+    this.inputs = []; this.flatten = flatten;
+    loadPdf(files[0]).then((doc) => {
+      const fields = doc.getForm().getFields();
+      if (!fields.length) { stat.textContent = t("This PDF has no form fields. You can still flatten it, or use Stamp to place text and signatures."); return; }
+      stat.textContent = plural(fields.length, "field");
+      for (const f of fields) {
+        const kind = fieldKind(f), name = f.getName();
+        let input;
+        try {
+          if (kind === "text") { const multi = f.isMultiline?.(); input = el(multi ? "textarea" : "input", { type: "text", "data-noremember": "" }); input.value = f.getText?.() || ""; if (f.isReadOnly?.()) input.disabled = true; }
+          else if (kind === "check") { input = el("input", { type: "checkbox", "data-noremember": "" }); input.checked = f.isChecked(); }
+          else if (kind === "radio" || kind === "dropdown" || kind === "list") {
+            const opts = f.getOptions();
+            const cur = kind === "radio" ? f.getSelected() : f.getSelected()?.[0];
+            input = select([["", "—"], ...opts.map((o) => [o, o])], cur ?? "", { "data-noremember": "" });
+          } else continue;
+        } catch (_) { continue; }
+        this.inputs.push({ field: f, kind, input });
+        list.append(kind === "check" ? el("label", { class: "check" }, [input, el("span", { text: name })]) : el("label", { class: "field" }, [el("span", { class: "field-label", text: name }), input]));
+      }
+    }).catch((err) => { stat.textContent = err.message; });
+  },
+  async run(files, _root, progress) {
+    const file = files[0];
+    await progress?.tick(file.name);
+    const doc = await loadPdf(file);
+    const form = doc.getForm();
+    let filled = 0, texts = "";
+    for (const { field: f0, kind, input } of this.inputs) {
+      let f;
+      try { f = form.getField(f0.getName()); } catch (_) { continue; }
+      try {
+        if (kind === "text") { if (input.disabled) continue; f.setText(input.value || ""); texts += input.value; filled++; }
+        else if (kind === "check") { if (input.checked) f.check(); else f.uncheck(); filled++; }
+        else if (input.value) { f.select(input.value); filled++; }
+      } catch (err) { throw new Error(t("Field \"{name}\": {msg}", { name: f0.getName(), msg: err.message })); }
+    }
+    if (!this.inputs.length && !this.flatten.input.checked) throw new Error("This PDF has no form fields");
+    const font = await fontFor(doc, texts, false);
+    try { form.updateFieldAppearances(font); } catch (_) { /* some fields have no widgets to draw */ }
+    if (this.flatten.input.checked) form.flatten();
+    return [{ name: `${baseName(file.name)}-${this.flatten.input.checked ? "flat" : "filled"}.pdf`, blob: pdfBlob(await doc.save()), note: this.flatten.input.checked ? t("{n} fields filled, flattened", { n: filled }) : t("{n} fields filled", { n: filled }) }];
+  },
+};
+
+export const pdfTools = [mergeTool, splitTool, reorderTool, rotatePdfTool, deletePagesTool, cropPdfTool, nupTool, bookletTool, pageNumbersTool, watermarkPdfTool, stampTool, formTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, extractImagesTool, pdfToTextTool];

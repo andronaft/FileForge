@@ -326,4 +326,109 @@ const base64Tool = {
   },
 };
 
-export const dataTools = [csvJsonTool, jsonFormatTool, base64Tool];
+// ---------- table converter ----------
+
+/** Rows (arrays of strings) from CSV/TSV, a Markdown table, an HTML table or a JSON array. Returns {rows, from}. */
+export function parseTable(text) {
+  const s = text.trim();
+  if (!s) return { rows: [], from: "" };
+  if (s.startsWith("[") || s.startsWith("{")) {
+    try {
+      let data = JSON.parse(s);
+      if (!Array.isArray(data)) data = [data];
+      if (!data.length) return { rows: [], from: "json" };
+      if (Array.isArray(data[0])) return { rows: data.map((r) => r.map((c) => (c == null ? "" : typeof c === "object" ? JSON.stringify(c) : String(c)))), from: "json" };
+      const keys = [];
+      for (const r of data) for (const k of Object.keys(r || {})) if (!keys.includes(k)) keys.push(k);
+      return { rows: [keys, ...data.map((r) => keys.map((k) => (r?.[k] == null ? "" : typeof r[k] === "object" ? JSON.stringify(r[k]) : String(r[k]))))], from: "json" };
+    } catch (_) { /* not JSON after all */ }
+  }
+  if (/<table[\s>]/i.test(s)) {
+    const doc = new DOMParser().parseFromString(s, "text/html");
+    const rows = [...doc.querySelectorAll("tr")].map((tr) => [...tr.querySelectorAll("th, td")].map((c) => c.textContent.trim()));
+    return { rows: rows.filter((r) => r.length), from: "html" };
+  }
+  const lines = s.split(/\r?\n/);
+  if (lines.every((l) => /^\s*\|/.test(l) || !l.trim())) {
+    const rows = lines.filter((l) => l.trim() && !/^\s*\|?\s*:?-{2,}/.test(l)).map((l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|")));
+    return { rows, from: "markdown" };
+  }
+  const delimiter = detectDelimiter(s);
+  return { rows: parseCsv(s, delimiter), from: delimiter === "\t" ? "tsv" : "csv" };
+}
+
+const isNum = (v) => /^-?\d[\d\s]*([.,]\d+)?%?$/.test(String(v).trim()) && String(v).trim() !== "";
+export function toMarkdownTable(rows, header = true) {
+  if (!rows.length) return "";
+  const cols = Math.max(...rows.map((r) => r.length));
+  const grid = rows.map((r) => Array.from({ length: cols }, (_, i) => String(r[i] ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ")));
+  const body = header ? grid.slice(1) : grid;
+  const widths = Array.from({ length: cols }, (_, i) => Math.max(3, ...grid.map((r) => [...r[i]].length)));
+  const numeric = Array.from({ length: cols }, (_, i) => body.length > 0 && body.every((r) => !r[i] || isNum(r[i])));
+  const line = (r) => `| ${r.map((c, i) => (numeric[i] ? c.padStart(widths[i]) : c.padEnd(widths[i]))).join(" | ")} |`;
+  const head = header ? grid[0] : Array.from({ length: cols }, (_, i) => `col${i + 1}`);
+  return [line(head), `| ${widths.map((w, i) => (numeric[i] ? "-".repeat(w - 1) + ":" : "-".repeat(w))).join(" | ")} |`, ...body.map(line)].join("\n") + "\n";
+}
+const escHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export function toHtmlTable(rows, header = true) {
+  if (!rows.length) return "";
+  const cell = (tag, c) => `<${tag}>${escHtml(c)}</${tag}>`;
+  const body = header ? rows.slice(1) : rows;
+  return `<table>\n${header ? `  <thead>\n    <tr>${rows[0].map((c) => cell("th", c)).join("")}</tr>\n  </thead>\n` : ""}  <tbody>\n${body.map((r) => `    <tr>${r.map((c) => cell("td", c)).join("")}</tr>`).join("\n")}\n  </tbody>\n</table>\n`;
+}
+
+const FORMATS = { markdown: ["Markdown table", "md"], csv: ["CSV", "csv"], tsv: ["TSV (tab-separated)", "tsv"], html: ["HTML table", "html"], json: ["JSON (array of objects)", "json"], jsonrows: ["JSON (array of rows)", "json"], sql: ["SQL INSERT statements", "sql"] };
+export function convertTable(rows, to, header, tableName = "data") {
+  if (to === "markdown") return toMarkdownTable(rows, header);
+  if (to === "html") return toHtmlTable(rows, header);
+  if (to === "csv") return toCsv(rows, ",");
+  if (to === "tsv") return toCsv(rows, "\t");
+  if (to === "jsonrows") return JSON.stringify(rows, null, 2) + "\n";
+  const keys = header ? rows[0] : rows[0]?.map((_, i) => `col${i + 1}`) || [];
+  const body = header ? rows.slice(1) : rows;
+  if (to === "json") return JSON.stringify(body.map((r) => Object.fromEntries(keys.map((k, i) => [k, coerce(r[i] ?? "")]))), null, 2) + "\n";
+  const q = (v) => (v === "" ? "NULL" : typeof coerce(v) === "number" ? String(coerce(v)) : `'${String(v).replace(/'/g, "''")}'`);
+  const id = (k) => `"${String(k).replace(/"/g, '""')}"`;
+  return body.map((r) => `INSERT INTO ${id(tableName)} (${keys.map(id).join(", ")}) VALUES (${keys.map((_, i) => q(r[i] ?? "")).join(", ")});`).join("\n") + "\n";
+}
+
+const tableTool = {
+  id: "table",
+  title: "Table converter",
+  description: "Paste a table in any form — CSV, TSV, Markdown, HTML or JSON — and get it back as a Markdown table, CSV, HTML, JSON or SQL INSERTs. Handy for READMEs, issues and docs.",
+  keywords: ["markdown table", "csv", "tsv", "html table", "sql", "insert", "convert", "excel", "paste"],
+  accept: ".csv,.tsv,.txt,.md,.json,.html,text/*,application/json",
+  multiple: false,
+  filesOptional: true,
+  noAutoDownload: true,
+  hint: "Optional: drop a CSV, TSV, Markdown, HTML or JSON file",
+  runLabel: "Save",
+  renderOptions(root, files) {
+    const { input, output } = textLayout(root, { inputLabel: "Input (CSV, TSV, Markdown, HTML or JSON)", outputLabel: "Output", placeholder: "name,qty,price\nMug,2,12.5\nT-shirt,1,24" });
+    const to = select(Object.entries(FORMATS).map(([k, [label]]) => [k, label]), "markdown");
+    const header = checkbox("First row is the header", true);
+    const tableName = el("input", { type: "text", value: "data", placeholder: "Table name (SQL)" });
+    const status = el("div", { class: "stat" });
+    root.prepend(el("div", { class: "row" }, [field("Convert to", to), header.label, field("Table name (SQL)", tableName)]), status);
+    const update = () => {
+      try {
+        const { rows, from } = parseTable(input.value);
+        if (!rows.length) { output.value = ""; status.textContent = ""; return; }
+        output.value = convertTable(rows, to.value, header.input.checked, tableName.value.trim() || "data");
+        status.textContent = t("Read as {from}: {rows} × {cols}", { from: from.toUpperCase(), rows: plural(rows.length, "row"), cols: Math.max(...rows.map((r) => r.length)) });
+      } catch (err) { output.value = ""; status.textContent = err.message; }
+    };
+    input.addEventListener("input", update); to.addEventListener("change", update); header.input.addEventListener("change", update); tableName.addEventListener("input", update);
+    this.ui = { input, output, to, files };
+    fillFromFile(files, input, update);
+    update();
+  },
+  async run() {
+    const { output, to, files } = this.ui;
+    if (!output.value) throw new Error("Paste a table first");
+    const [, ext] = FORMATS[to.value];
+    return [{ name: `${files[0] ? baseName(files[0].name) : "table"}.${ext}`, blob: new Blob([output.value], { type: "text/plain" }), note: plural(output.value.split("\n").filter(Boolean).length, "row") }];
+  },
+};
+
+export const dataTools = [csvJsonTool, tableTool, jsonFormatTool, base64Tool];
