@@ -159,6 +159,8 @@ builds both zips, creates a [GitHub Release](https://github.com/andronaft/FileFo
 to the [Chrome Web Store](https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn) and [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/).
 Store listing text: [docs/store-listing.md](docs/store-listing.md); changes per version: [CHANGELOG.md](CHANGELOG.md).
 
+Why I built it: [I stopped uploading my files to random converter sites](https://zhukovskyi.space/blog/fileforge/). Made by [Andrii Zhukovskyi](https://zhukovskyi.space/).
+
 ## Privacy
 
 See [PRIVACY.md](PRIVACY.md). Short version: no uploads, no accounts, no analytics.
