@@ -1,5 +1,76 @@
 # Changelog
 
+## 1.3.0
+
+### Added
+
+- **Image to text (OCR)**: read the text in photos, screenshots and scanned PDFs with Tesseract, on your device.
+  English and Ukrainian are built in; any other language works from a `.traineddata` file. Save `.txt` or a
+  searchable PDF: for a scanned PDF the original pages stay exactly as they are and get an invisible text
+  layer, so the text can be selected and found.
+- **Protect PDF**: a password to open (AES-256) and permissions for printing, copying text and editing.
+- **Unlock PDF**: remove a password you know and lift print / copy / edit restrictions.
+- **Repair PDF**: rebuild a damaged or cut-off PDF and keep every page that can still be read; optional web
+  optimisation.
+- **Redact PDF**: drag boxes over what to hide or find a word to mark every place it appears. Marked pages are
+  rebuilt as images, so the text underneath is really gone.
+- **Compare PDFs**: the text of two versions line by line, with the pages that changed and a `.diff` report.
+- **Transparent background**: make a plain background transparent (logos, signatures, stamps, product shots);
+  pick the colour by clicking, remove only what surrounds the subject or the colour everywhere, smooth edges,
+  trim the margins.
+- **Create ZIP** and **Extract ZIP** in the Files group.
+- **Save all to a folder**: write a whole batch of results into a folder you pick, no archive to unpack
+  (Chrome, Edge and other Chromium browsers).
+
+### Changed
+
+- Restricted PDFs (printing or copying switched off, but no password to open) now just work in every PDF tool.
+  A PDF that needs a password says so and points to Unlock PDF, instead of failing with a parse error.
+- 64 tools in total (was 55).
+- The web version caches the OCR engine and its language models (about 8 MB) only after the OCR tool is first
+  used, not on the first visit.
+
+## 1.2.0
+
+### Added
+
+- **Sign & fill PDF**: sign any PDF and fill it in where there are no form fields. Draw, type or upload a
+  signature (a photo of a signature on paper gets a transparent background), then place it with text, today's
+  date, ticks and crosses anywhere; drag to move, resize from the corner. Works on rotated pages; Cyrillic text
+  uses the bundled font; the signature can be remembered in this browser.
+- **Scan document photo**: phone photos of paper become a clean scan. The sheet's corners are found
+  automatically and can be dragged, the perspective is straightened, uneven light is evened out so the paper
+  turns white (colour, greyscale or black & white), and all pages go into one A4 / Letter PDF.
+- **ID & passport photo**: 35 × 45, 3 × 4, 2 × 2 in, 33 × 48, 40 × 60, 50 × 70 or a custom size, with crown and
+  chin guides; save one photo, a 10 × 15 print sheet (JPEG) or an A4 sheet (PDF) with cut lines, at 300 or 600 dpi.
+- **Annotate screenshot**: arrows, boxes, circles, highlighter, pen, text and numbered steps in any colour,
+  undo and redo, Shift for squares and circles; paste a screenshot with Ctrl+V and copy the result back.
+- **Drop a folder or a ZIP** into any tool: folders are walked, archives unpacked, hidden files and macOS
+  `__MACOSX` entries skipped. A "choose a folder" link sits next to "choose files".
+- **Bigger file previews**: thumbnails in the file list are larger and sharp on HiDPI screens; each row also
+  shows the image size in pixels or the PDF's page count.
+- **Click a thumbnail to open the file**: images (HEIC too) open full size, and PDFs show every page, rendered
+  by pdf.js so it works without the browser's own PDF viewer (side panel, Firefox). Works for results too.
+- **Search that understands how people type**: `пдф`, `джпг` and other Cyrillic spellings of formats, everyday
+  and Russian words (`сжать`, `объединить`, `кроп`), "X to Y" queries (`png в jpg`, `jpg to pdf` put the right
+  converter first), apostrophes (`об'єднати`), typos (`mrege`) and the wrong keyboard layout (`зва` → `pdf`,
+  `cnbcyenb` → `стиснути`). Works in the search palette and the sidebar filter, in either interface language.
+- **Pick the tool for a dropped file**: files dropped on the home page (or opened with FileForge) no longer go
+  straight to Crop or Split. A list shows every tool that takes them, with the suggested one, favourites and
+  recent tools first; Enter opens the suggestion, typing filters the list.
+- **HEIC thumbnails**: decoded in the background at low priority, so a conversion never waits behind them.
+
+### Fixed
+
+- **HEIC to JPG** no longer hangs on "Working…" in the Chrome extension. The old decoder (heic2any) started a
+  blob worker that the extension sandbox blocks, and then waited for it forever. It is replaced by libheif 1.23
+  compiled to WebAssembly, running in a worker: newer iPhone photos decode, a 12 MP photo takes about a second,
+  and a stuck decode now fails with a message after two minutes instead of spinning.
+- **HEIC photos work in every image tool**, not only HEIC to JPG: Images to PDF, crop, resize, rotate, compress,
+  convert, watermark and the rest decode them first. Before, they failed with "The source image could not be
+  decoded".
+- HEIC now works in the **Firefox** add-on too; it no longer needs the sandboxed page Firefox does not have.
+
 ## 1.1.0
 
 ### Added

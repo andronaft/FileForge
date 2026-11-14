@@ -1,6 +1,9 @@
 import { el, baseName, field, select, number, checkbox, parseRanges, formatBytes, plural, toast, t } from "../util.js";
 import * as pdfjsLib from "../../vendor/pdf.min.mjs";
 import { copyButton } from "./data.js";
+import { getLang } from "../i18n.js";
+import { qpdf, qpdfMessage, pdfLock, decryptPdf, PdfPasswordError } from "../qpdf.js";
+import { toBrowserImage } from "../heic.js";
 
 const { PDFDocument, PDFDict, PDFName, degrees, PageSizes, StandardFonts, rgb } = PDFLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("../../vendor/pdf.worker.min.mjs", import.meta.url).href;
@@ -60,15 +63,15 @@ async function renderThumb(doc, pageIndex, width) {
   return c;
 }
 
-/** First page of a PDF as a canvas no larger than `size` px (for the file list). */
+/** First page of a PDF as a canvas no larger than `size` px, plus the page count (for the file list). */
 export async function pdfThumbnail(file, size) {
   const data = new Uint8Array(await file.arrayBuffer());
   const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
   try {
     const page = await doc.getPage(1);
     const vp1 = page.getViewport({ scale: 1 });
-    const c = await renderThumb(doc, 0, Math.round(size * Math.min(1, vp1.width / vp1.height)));
-    return c;
+    const canvas = await renderThumb(doc, 0, Math.round(size * Math.min(1, vp1.width / vp1.height)));
+    return { canvas, pages: doc.numPages };
   } finally { await doc.destroy(); }
 }
 
@@ -86,6 +89,38 @@ function pageTiles(doc, grid, indices, width = 104) {
   });
   grid.append(...tiles);
   return tiles;
+}
+
+/**
+ * Every page of a PDF, full width, rendered with pdf.js into `container` as it scrolls into view (for the
+ * preview dialog; works without the browser's own PDF viewer). Returns a function that frees the document.
+ */
+export async function renderPdfPages(file, container, width) {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  let closed = false;
+  const paint = (sheet) => {
+    renderThumb(doc, Number(sheet.dataset.page), Math.round(width * dpr)).then((c) => { if (!closed) sheet.querySelector(".ph")?.replaceWith(c); }).catch(() => {});
+  };
+  const io = new IntersectionObserver((entries) => {
+    for (const e of entries) {
+      if (!e.isIntersecting || closed) continue;
+      io.unobserve(e.target);
+      paint(e.target);
+    }
+  }, { root: container, rootMargin: "600px" });
+  const EAGER = 3; // the pages on screen right away, even where IntersectionObserver is slow to report
+  const first = (await doc.getPage(1)).getViewport({ scale: 1 });
+  for (let i = 0; i < doc.numPages; i++) {
+    const sheet = el("div", { class: "pdf-sheet", "data-page": String(i) }, [
+      el("div", { class: "ph", style: `aspect-ratio: ${first.width} / ${first.height}` }),
+      el("span", { class: "page-n", text: `${i + 1} / ${doc.numPages}` }),
+    ]);
+    container.append(sheet);
+    if (i < EAGER) paint(sheet); else io.observe(sheet);
+  }
+  return () => { closed = true; io.disconnect(); doc.destroy().catch(() => {}); };
 }
 
 /** "1-3, 5" for a set of 0-based page indices. */
@@ -134,13 +169,24 @@ function toBlob(canvas, mime, quality) {
 }
 
 async function loadPdf(file) {
-  const bytes = await file.arrayBuffer();
+  let bytes = await file.arrayBuffer();
+  let doc;
   try {
     // updateMetadata: false keeps the file's own Info dictionary; pdf-lib would otherwise stamp its Producer and dates.
-    return await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+    doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
   } catch (err) {
     throw new Error(`${file.name} is not a readable PDF (${err.message || err})`);
   }
+  if (!doc.isEncrypted) return doc;
+  // pdf-lib cannot read encrypted content. A file that is only restricted (printing, copying) opens with an empty
+  // password, so decrypt it with qpdf and carry on; one that needs a password to open goes to Unlock PDF first.
+  try {
+    bytes = await decryptPdf(new Uint8Array(bytes), "");
+  } catch (err) {
+    if (err instanceof PdfPasswordError) throw new Error(t("{name} is password-protected. Remove the password with Unlock PDF first.", { name: file.name }));
+    throw new Error(`${file.name}: ${err.message || err}`);
+  }
+  return PDFDocument.load(bytes, { updateMetadata: false });
 }
 
 async function pageCount(file) {
@@ -354,7 +400,7 @@ const imagesToPdfTool = {
   description: "Put one image per page into a single PDF. Order them with the arrows in the file list.",
   accept: "image/*",
   orderable: true,
-  hint: "JPG, PNG, WebP, GIF, BMP — multiple files allowed",
+  hint: "JPG, PNG, WebP, GIF, BMP, HEIC — multiple files allowed",
   runLabel: "Create PDF",
   renderOptions(root) {
     const size = select([["fit", "Page fits each image"], ["a4p", "A4 portrait"], ["a4l", "A4 landscape"], ["letterp", "Letter portrait"], ["letterl", "Letter landscape"]], "fit");
@@ -370,8 +416,9 @@ const imagesToPdfTool = {
   async run(files, _root, progress) {
     const o = this.opts;
     const doc = await PDFDocument.create();
-    for (const file of files) {
+    for (let file of files) {
       await progress?.tick(file.name);
+      file = await toBrowserImage(file); // HEIC photos are decoded to JPEG first
       let image;
       if (file.type === "image/jpeg") {
         const bytes = await file.arrayBuffer();
@@ -761,7 +808,7 @@ const pdfMetadataTool = {
 const pdfToTextTool = {
   id: "pdf-to-text",
   title: "PDF to text",
-  description: "Pull the text layer out of a PDF as plain text or Markdown. Scanned PDFs have no text layer; those need OCR, which FileForge does not do.",
+  description: "Pull the text layer out of a PDF as plain text or Markdown. Scanned PDFs have no text layer; read those with Image to text (OCR).",
   accept: "application/pdf,.pdf",
   hint: "One or more PDF files",
   runLabel: "Extract text",
@@ -1219,4 +1266,332 @@ const formTool = {
   },
 };
 
-export const pdfTools = [mergeTool, splitTool, reorderTool, rotatePdfTool, deletePagesTool, cropPdfTool, nupTool, bookletTool, pageNumbersTool, watermarkPdfTool, stampTool, formTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, extractImagesTool, pdfToTextTool];
+// ---------- sign & fill any PDF ----------
+// Places text, dates, ticks, crosses and a signature anywhere on any PDF, not only on form fields. Items are kept
+// in pdf.js viewport units (scale 1, page rotation applied), so convertToPdfPoint maps them back for pdf-lib.
+
+const SIGN_KEY = "fileforge.signature";
+const INKS = { black: "#111111", blue: "#1a3fa8", red: "#c62828" };
+
+/** A transparent PNG data URL of `canvas` trimmed to the drawn pixels (with a small margin), or null if empty. */
+function trimToInk(canvas) {
+  const g = canvas.getContext("2d", { willReadFrequently: true });
+  const { width: w, height: h } = canvas;
+  const d = g.getImageData(0, 0, w, h).data;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 16) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0) return null;
+  const m = 6; x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w - 1, x1 + m); y1 = Math.min(h - 1, y1 + m);
+  const out = document.createElement("canvas");
+  out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
+  out.getContext("2d").drawImage(canvas, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+  return out.toDataURL("image/png");
+}
+
+/** ✓ or ✗ as a PNG data URL in the given colour. */
+function markImage(kind, colour) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 96;
+  const g = c.getContext("2d");
+  g.strokeStyle = colour; g.lineWidth = 12; g.lineCap = "round"; g.lineJoin = "round";
+  g.beginPath();
+  if (kind === "check") { g.moveTo(14, 52); g.lineTo(38, 78); g.lineTo(84, 18); }
+  else { g.moveTo(18, 18); g.lineTo(78, 78); g.moveTo(78, 18); g.lineTo(18, 78); }
+  g.stroke();
+  return c.toDataURL("image/png");
+}
+
+const loadImg = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("Could not read that image")); i.src = src; });
+
+const signTool = {
+  id: "pdf-sign",
+  title: "Sign & fill PDF",
+  description: "Sign any PDF and fill it in where there are no form fields: draw, type or upload your signature, add text, today's date, ticks and crosses anywhere on the page, then save.",
+  keywords: ["sign", "signature", "e-sign", "fill", "fill in", "text on pdf", "add text", "date", "tick", "check", "contract", "підпис"],
+  accept: "application/pdf,.pdf",
+  multiple: false,
+  hint: "One PDF: a contract, application or any form, even a scanned one",
+  runLabel: "Save signed PDF",
+  renderOptions(root, files) {
+    const file = files[0];
+    const st = this.state?.file === file ? this.state : { file, items: [], seq: 0 };
+    this.state = st;
+    let tool = null, selected = null;
+    let signature = st.signature || null;
+    if (!signature) try { signature = localStorage.getItem(SIGN_KEY) || null; } catch (_) { /* private mode */ }
+
+    // ---- toolbar ----
+    const TOOLS = [["text", "Text", "T"], ["date", "Date", "📅"], ["check", "Tick", "✓"], ["cross", "Cross", "✗"], ["sign", "Signature", "✍"]];
+    const toolBtns = TOOLS.map(([id, label, glyph]) => el("button", { type: "button", class: "chip-btn", "aria-pressed": "false", onclick: () => setTool(tool === id ? null : id) }, [el("span", { class: "glyph", text: glyph }), label]));
+    const ink = select([["black", "Black ink"], ["blue", "Blue ink"], ["red", "Red ink"]], "black");
+    const fontSize = select([["9", "9 pt"], ["10", "10 pt"], ["11", "11 pt"], ["12", "12 pt"], ["14", "14 pt"], ["18", "18 pt"], ["24", "24 pt"]], "11");
+    const hint = el("div", { class: "stat" });
+    const setTool = (id) => {
+      tool = id;
+      toolBtns.forEach((b, i) => { const on = TOOLS[i][0] === id; b.classList.toggle("on", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
+      pagesBox.classList.toggle("placing", !!id);
+      hint.textContent = !id ? t("Pick what to add, then click on the page. Drag items to move them, the corner to resize, double-click text to edit.")
+        : id === "sign" && !signature ? t("Create your signature first: draw, type or upload it below.")
+        : t("Click on the page where it should go.");
+      if (id === "sign" && !signature) openPad("draw");
+    };
+
+    // ---- signature panel ----
+    const sigPreview = el("div", { class: "sig-preview" });
+    const remember = checkbox("Remember my signature in this browser", (() => { try { return !!localStorage.getItem(SIGN_KEY); } catch (_) { return false; } })());
+    const padBox = el("div", { class: "sig-pad", hidden: true });
+    const upload = el("input", { type: "file", accept: "image/*", hidden: true });
+    const paintSig = () => {
+      sigPreview.replaceChildren(signature ? el("img", { src: signature, alt: "Your signature" }) : el("span", { class: "stat", text: "No signature yet" }));
+    };
+    const setSignature = (url) => {
+      signature = url; st.signature = url; paintSig();
+      try { if (remember.input.checked && url) localStorage.setItem(SIGN_KEY, url); } catch (_) { /* quota or private mode */ }
+      padBox.hidden = true;
+      if (url) setTool("sign");
+    };
+    remember.input.addEventListener("change", () => { try { if (remember.input.checked && signature) localStorage.setItem(SIGN_KEY, signature); else if (!remember.input.checked) localStorage.removeItem(SIGN_KEY); } catch (_) { /* ignore */ } });
+    upload.addEventListener("change", async () => {
+      const f = upload.files[0]; upload.value = "";
+      if (!f) return;
+      try {
+        const img = await loadImg(URL.createObjectURL(f));
+        const k = Math.min(1, 900 / img.naturalWidth);
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.naturalWidth * k); c.height = Math.round(img.naturalHeight * k);
+        const g = c.getContext("2d", { willReadFrequently: true });
+        g.drawImage(img, 0, 0, c.width, c.height);
+        // a photo or scan of a signature on paper: make the paper transparent
+        const id = g.getImageData(0, 0, c.width, c.height), d = id.data;
+        for (let i = 0; i < d.length; i += 4) { const v = (d[i] + d[i + 1] + d[i + 2]) / 3; if (v > 200) d[i + 3] = 0; else if (v > 150) d[i + 3] = Math.round(d[i + 3] * (200 - v) / 50); }
+        g.putImageData(id, 0, 0);
+        const url = trimToInk(c);
+        if (!url) throw new Error("No signature found in that image");
+        setSignature(url);
+      } catch (err) { toast(err.message, "error"); }
+    });
+    const openPad = (kind) => {
+      padBox.hidden = false;
+      const colour = INKS[ink.value] || INKS.black;
+      if (kind === "draw") {
+        const c = el("canvas", { class: "sig-canvas", width: 900, height: 300 });
+        const g = c.getContext("2d");
+        g.strokeStyle = colour; g.lineWidth = 5; g.lineCap = "round"; g.lineJoin = "round";
+        let last = null;
+        const at = (e) => { const r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * c.width / r.width, y: (e.clientY - r.top) * c.height / r.height }; };
+        c.addEventListener("pointerdown", (e) => { c.setPointerCapture(e.pointerId); last = at(e); g.beginPath(); g.arc(last.x, last.y, 2.4, 0, Math.PI * 2); g.fillStyle = colour; g.fill(); });
+        c.addEventListener("pointermove", (e) => {
+          if (!last) return;
+          const p = at(e);
+          g.beginPath(); g.moveTo(last.x, last.y);
+          g.quadraticCurveTo(last.x, last.y, (last.x + p.x) / 2, (last.y + p.y) / 2); g.lineTo(p.x, p.y); g.stroke();
+          last = p;
+        });
+        const stop = () => { last = null; };
+        c.addEventListener("pointerup", stop); c.addEventListener("pointercancel", stop);
+        padBox.replaceChildren(
+          el("div", { class: "stat", text: "Sign with the mouse, a trackpad or a finger" }), c,
+          el("div", { class: "actions" }, [
+            el("button", { type: "button", class: "primary", text: "Use this signature", onclick: () => { const url = trimToInk(c); if (url) setSignature(url); else toast("Draw your signature first", "error"); } }),
+            el("button", { type: "button", text: "Clear", onclick: () => g.clearRect(0, 0, c.width, c.height) }),
+            el("button", { type: "button", text: "Cancel", onclick: () => { padBox.hidden = true; } }),
+          ]),
+        );
+      } else {
+        const name = el("input", { type: "text", placeholder: "Your name", "data-noremember": "" });
+        const c = el("canvas", { class: "sig-canvas", width: 900, height: 220 });
+        const paint = () => {
+          const g = c.getContext("2d");
+          g.clearRect(0, 0, c.width, c.height);
+          g.fillStyle = colour; g.textBaseline = "middle";
+          let size = 110;
+          g.font = `italic ${size}px "Segoe Script", "Brush Script MT", "Snell Roundhand", "Apple Chancery", "URW Chancery L", cursive`;
+          while (size > 30 && g.measureText(name.value).width > c.width - 40) { size -= 6; g.font = g.font.replace(/\d+px/, `${size}px`); }
+          g.fillText(name.value, 20, c.height / 2);
+        };
+        name.addEventListener("input", paint);
+        padBox.replaceChildren(
+          field("Type your name", name), c,
+          el("div", { class: "actions" }, [
+            el("button", { type: "button", class: "primary", text: "Use this signature", onclick: () => { const url = trimToInk(c); if (url) setSignature(url); else toast("Type your name first", "error"); } }),
+            el("button", { type: "button", text: "Cancel", onclick: () => { padBox.hidden = true; } }),
+          ]),
+        );
+        setTimeout(() => name.focus(), 0);
+      }
+    };
+
+    const pagesBox = el("div", { class: "sign-pages" });
+    const info = el("div", { class: "stat" });
+    root.append(
+      el("div", { class: "annot-bar" }, [el("div", { class: "chip-row" }, toolBtns), el("div", { class: "row" }, [field("Ink", ink), field("Text size", fontSize)])]),
+      hint,
+      el("div", { class: "sig-row" }, [
+        el("span", { class: "field-label", text: "Your signature" }), sigPreview,
+        el("button", { type: "button", text: "Draw", onclick: () => openPad("draw") }),
+        el("button", { type: "button", text: "Type it", onclick: () => openPad("type") }),
+        el("button", { type: "button", text: "Upload image", onclick: () => upload.click() }), upload,
+        remember.label,
+      ]),
+      padBox,
+      pagesBox, info,
+    );
+    paintSig(); setTool(null);
+
+    // ---- pages ----
+    const layers = [];
+    const select_ = (it) => { selected = it; for (const l of layers) for (const n of l.layer.children) n.classList.toggle("selected", n._item === it); };
+    const paintInfo = () => { info.textContent = st.items.length ? plural(st.items.length, "item") : t("Nothing added yet"); };
+    const place = (it) => {
+      const L = layers[it.page]; if (!L) return;
+      let node = [...L.layer.children].find((n) => n._item === it);
+      if (!node) {
+        node = el("div", { class: `sign-item ${it.kind === "text" ? "is-text" : "is-img"}` });
+        node._item = it;
+        const del = el("button", { type: "button", class: "sign-del", title: "Remove", "aria-label": "Remove", text: "×", onpointerdown: (e) => e.stopPropagation(), onclick: (e) => { e.stopPropagation(); remove(it); } });
+        const handle = el("span", { class: "sign-handle", title: "Drag to resize" });
+        if (it.kind === "text") {
+          const body = el("div", { class: "sign-text", spellcheck: "false" });
+          body.textContent = it.text;
+          body.addEventListener("dblclick", () => edit(node));
+          body.addEventListener("input", () => { it.text = body.innerText.replace(/\n$/, ""); });
+          body.addEventListener("blur", () => { body.contentEditable = "false"; node.classList.remove("editing"); if (!it.text.trim()) remove(it); });
+          body.addEventListener("keydown", (e) => { e.stopPropagation(); if (e.key === "Escape") body.blur(); });
+          node.append(body);
+        } else node.append(el("img", { src: it.src, alt: "", draggable: false }));
+        node.append(del, handle);
+        drag(node, it, handle);
+        L.layer.append(node);
+      }
+      const s = L.scale;
+      node.style.left = `${it.x * s}px`; node.style.top = `${it.y * s}px`;
+      if (it.kind === "text") { const b = node.querySelector(".sign-text"); b.style.fontSize = `${it.size * s}px`; b.style.color = it.color; }
+      else { node.style.width = `${it.w * s}px`; node.style.height = `${it.h * s}px`; }
+      paintInfo();
+    };
+    const edit = (node) => {
+      const body = node.querySelector(".sign-text"); if (!body) return;
+      node.classList.add("editing"); body.contentEditable = "true"; body.focus();
+      const r = document.createRange(); r.selectNodeContents(body); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    };
+    const remove = (it) => {
+      st.items = st.items.filter((x) => x !== it);
+      for (const l of layers) for (const n of [...l.layer.children]) if (n._item === it) n.remove();
+      if (selected === it) selected = null;
+      paintInfo();
+    };
+    const drag = (node, it, handle) => {
+      let start = null, orig = null, resizing = false;
+      node.addEventListener("pointerdown", (e) => {
+        if (node.classList.contains("editing")) return;
+        e.stopPropagation(); e.preventDefault();
+        select_(it);
+        resizing = e.target === handle;
+        start = { x: e.clientX, y: e.clientY }; orig = { ...it };
+        node.setPointerCapture(e.pointerId);
+      });
+      node.addEventListener("pointermove", (e) => {
+        if (!start) return;
+        const s = layers[it.page].scale, dx = (e.clientX - start.x) / s, dy = (e.clientY - start.y) / s;
+        if (resizing) {
+          if (it.kind === "text") it.size = Math.max(5, Math.min(96, orig.size + dy * 0.6));
+          else { const w = Math.max(8, orig.w + dx); it.h = orig.h * (w / orig.w); it.w = w; }
+        } else { it.x = orig.x + dx; it.y = orig.y + dy; }
+        place(it);
+      });
+      const end = () => { start = null; };
+      node.addEventListener("pointerup", end); node.addEventListener("pointercancel", end);
+    };
+    const add = async (pageIndex, x, y) => {
+      const kind = tool; // the toolbar may change while the image loads
+      const colour = INKS[ink.value] || INKS.black;
+      const base = { id: ++st.seq, page: pageIndex, color: colour };
+      let it;
+      if (kind === "text" || kind === "date") {
+        const size = Number(fontSize.value) || 11;
+        it = { ...base, kind: "text", x, y: y - size * 0.6, size, text: kind === "date" ? new Date().toLocaleDateString(getLang() === "uk" ? "uk-UA" : undefined) : "" };
+      } else {
+        const src = kind === "sign" ? signature : markImage(kind, colour);
+        if (!src) { openPad("draw"); return; }
+        const img = await loadImg(src);
+        const w = kind === "sign" ? 150 : 14, h = w * img.naturalHeight / img.naturalWidth;
+        it = { ...base, kind: "img", src, x: x - w / 2, y: y - h / 2, w, h };
+      }
+      st.items.push(it);
+      place(it); select_(it);
+      if (it.kind === "text") { const node = [...layers[pageIndex].layer.children].find((n) => n._item === it); if (it.text) { /* date: ready */ } else edit(node); }
+      if (kind !== "check" && kind !== "cross") setTool(null);
+    };
+
+    const onKey = (e) => {
+      if (!root.isConnected) { document.removeEventListener("keydown", onKey); return; }
+      if (!selected || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(selected); }
+    };
+    document.addEventListener("keydown", onKey);
+
+    closeDocs();
+    openDoc(file).then(async (doc) => {
+      this.doc = doc;
+      this.viewports = [];
+      const width = Math.min(820, root.clientWidth > 200 ? root.clientWidth - 40 : 820);
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const io = new IntersectionObserver((entries) => {
+        for (const e of entries) if (e.isIntersecting) { io.unobserve(e.target); paintPage(e.target._index); }
+      }, { root: pagesBox, rootMargin: "400px" });
+      const paintPage = (i) => renderThumb(doc, i, Math.round(width * dpr)).then((c) => { c.className = "sign-canvas"; layers[i].sheet.querySelector(".ph")?.replaceWith(c); }).catch(() => {});
+      for (let i = 0; i < doc.numPages; i++) {
+        const vp = (await doc.getPage(i + 1)).getViewport({ scale: 1 });
+        this.viewports.push(vp);
+        const scale = width / vp.width;
+        const layer = el("div", { class: "sign-layer" });
+        const sheet = el("div", { class: "sign-sheet", style: `width:${width}px;height:${Math.round(vp.height * scale)}px` }, [el("div", { class: "ph" }), layer, el("span", { class: "page-n", text: `${i + 1} / ${doc.numPages}` })]);
+        sheet._index = i;
+        layers.push({ sheet, layer, scale });
+        sheet.addEventListener("pointerdown", (e) => {
+          if (e.target.closest(".sign-item")) return;
+          const r = sheet.getBoundingClientRect();
+          const x = (e.clientX - r.left) / scale, y = (e.clientY - r.top) / scale;
+          if (tool) { e.preventDefault(); add(i, x, y).catch((err) => toast(err.message, "error")); }
+          else select_(null);
+        });
+        pagesBox.append(sheet);
+        if (i < 2) paintPage(i); else io.observe(sheet);
+      }
+      for (const it of st.items) place(it);
+      paintInfo();
+    }).catch((err) => { pagesBox.replaceChildren(el("p", { class: "stat bad", text: err.message })); });
+  },
+  async run(files) {
+    const st = this.state;
+    if (!st?.items.length) throw new Error("Add a signature, text or a mark first");
+    const doc = await loadPdf(files[0]);
+    const pages = doc.getPages();
+    const images = new Map();
+    for (const it of st.items) {
+      const vp = this.viewports[it.page], page = pages[it.page];
+      if (!vp || !page) continue;
+      const rotate = degrees(vp.rotation || 0);
+      if (it.kind === "text") {
+        const text = it.text.trim();
+        if (!text) continue;
+        const font = await fontFor(doc, text, false);
+        // the text box's top-left is (x, y); its first baseline sits about one em lower
+        const [px, py] = vp.convertToPdfPoint(it.x + 2, it.y + it.size * 1.02);
+        const c = it.color, rgbOf = (h) => rgb(parseInt(h.slice(1, 3), 16) / 255, parseInt(h.slice(3, 5), 16) / 255, parseInt(h.slice(5, 7), 16) / 255);
+        page.drawText(text, { x: px, y: py, size: it.size, font, color: rgbOf(c), lineHeight: it.size * 1.2, rotate });
+      } else {
+        if (!images.has(it.src)) images.set(it.src, await doc.embedPng(Uint8Array.from(atob(it.src.split(",")[1]), (ch) => ch.charCodeAt(0))));
+        const [px, py] = vp.convertToPdfPoint(it.x, it.y + it.h);
+        page.drawImage(images.get(it.src), { x: px, y: py, width: it.w, height: it.h, rotate });
+      }
+    }
+    const blob = pdfBlob(await doc.save());
+    return [{ name: `${baseName(files[0].name)}-signed.pdf`, blob, note: plural(st.items.length, "item") }];
+  },
+};
+
+export const pdfTools = [mergeTool, splitTool, signTool, reorderTool, rotatePdfTool, deletePagesTool, cropPdfTool, nupTool, bookletTool, pageNumbersTool, watermarkPdfTool, stampTool, formTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, extractImagesTool, pdfToTextTool];
+
+// Shared with the PDF tools in pdf-more.js (passwords, repair, redact, compare).
+export { pdfjsLib, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, fontFor, toBlob as canvasBlob };

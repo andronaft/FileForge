@@ -1,14 +1,19 @@
 import { el, formatBytes, download, zipFiles, toast, withType, guessType, plural, t } from "./util.js";
 import { initLang, setLang, getLang, LANGS } from "./i18n.js";
 import { icon } from "./icons.js";
+import { createSearch } from "./search.js";
 import { imageTools } from "./tools/image.js";
-import { pdfTools } from "./tools/pdf.js";
+import { photoTools } from "./tools/photo.js";
+import { ocrTools } from "./tools/ocr.js";
+import { pdfTools, renderPdfPages } from "./tools/pdf.js";
+import { pdfMoreTools } from "./tools/pdf-more.js";
 import { markdownTools } from "./tools/markdown.js";
 import { dataTools } from "./tools/data.js";
 import { textTools } from "./tools/text.js";
 import { pipelineTool } from "./tools/pipeline.js";
 import { fileTools } from "./tools/files.js";
-import { thumbnail } from "./thumbs.js";
+import { thumbnail, preview } from "./thumbs.js";
+import { isHeic, toBrowserImage } from "./heic.js";
 
 await initLang();
 for (const n of document.querySelectorAll("[data-i18n]")) n.textContent = t(n.dataset.i18n);
@@ -16,8 +21,8 @@ for (const n of document.querySelectorAll("[data-i18n-placeholder]")) n.placehol
 for (const n of document.querySelectorAll("[aria-label]")) n.setAttribute("aria-label", t(n.getAttribute("aria-label")));
 
 const groups = [
-  { id: "images", title: "Images", icon: "image", tools: imageTools },
-  { id: "pdf", title: "PDF", icon: "pdf", tools: pdfTools },
+  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1)] },
+  { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools, ...pdfMoreTools] },
   { id: "text", title: "Text & data", icon: "text", tools: [...markdownTools, ...dataTools, ...textTools] },
   { id: "files", title: "Files", icon: "file", tools: fileTools },
   { id: "batch", title: "Batch", icon: "zap", tools: [pipelineTool] },
@@ -78,24 +83,13 @@ function paintFav() {
 }
 
 // ---------- search ----------
-function haystack(tool) {
-  return [tool.title, t(tool.title), tool.description, t(tool.description), ...(tool.keywords || []), tool.group.title, t(tool.group.title), tool.id].join(" ").toLowerCase();
-}
+// Matching lives in search.js: synonyms ("пдф", "сжать"), "png в jpg", typos and the wrong keyboard layout.
+const search = createSearch(tools, (tool) => ({
+  title: `${tool.title} ${t(tool.title)}`,
+  text: [tool.description, t(tool.description), ...(tool.keywords || []), tool.group.title, t(tool.group.title), tool.id].join(" "),
+}));
 /** Tools matching every word of `q`, best matches (title hits) first. */
-export function searchTools(q) {
-  const words = q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return tools;
-  return tools
-    .map((tool) => {
-      const hay = haystack(tool), title = `${tool.title} ${t(tool.title)}`.toLowerCase();
-      if (!words.every((w) => hay.includes(w))) return null;
-      const score = words.reduce((s, w) => s + (title.startsWith(w) ? 3 : title.includes(w) ? 2 : 1), 0);
-      return { tool, score };
-    })
-    .filter(Boolean)
-    .sort((a, b) => b.score - a.score)
-    .map((x) => x.tool);
-}
+export function searchTools(q) { return search(q); }
 
 // ---------- navigation ----------
 function navLink(tool) {
@@ -210,22 +204,43 @@ viewBtn.addEventListener("click", async () => {
 const palette = document.getElementById("palette");
 const paletteInput = document.getElementById("paletteInput");
 const paletteList = document.getElementById("paletteList");
+const paletteNote = document.getElementById("paletteNote");
 let paletteIndex = 0;
+// Set while the palette is asking which tool should open dropped files: { files, tools }.
+let paletteFiles = null;
 
-function openPalette() {
+function openPalette(withFiles) {
   if (palette.open) return;
+  paletteFiles = withFiles?.files ? withFiles : null;
+  paletteNote.hidden = !paletteFiles;
+  if (paletteFiles) {
+    const { files } = paletteFiles;
+    paletteNote.replaceChildren(
+      el("strong", { text: t("Open {files} with…", { files: plural(files.length, "file") }) }),
+      el("span", { text: files.length === 1 ? files[0].name : t("{name} and {more} more", { name: files[0].name, more: files.length - 1 }) }),
+    );
+  }
   paletteInput.value = "";
   paletteIndex = 0;
   renderPalette();
   palette.showModal();
   paletteInput.focus();
 }
+palette.addEventListener("close", () => { paletteFiles = null; });
 function renderPalette() {
-  const hits = searchTools(paletteInput.value).slice(0, 12);
+  const q = paletteInput.value;
+  // For dropped files: only the tools that take them, in the suggested order until something is typed.
+  const hits = paletteFiles
+    ? (q.trim() ? searchTools(q).filter((x) => paletteFiles.tools.includes(x)) : paletteFiles.tools)
+    : searchTools(q).slice(0, 12);
   paletteIndex = Math.min(paletteIndex, Math.max(0, hits.length - 1));
   paletteList.replaceChildren(...hits.map((tool, i) => el("button", {
     type: "button", class: `palette-item${i === paletteIndex ? " active" : ""}`, role: "option", "aria-selected": i === paletteIndex ? "true" : "false",
-    onclick: () => { palette.close(); location.hash = `#${tool.id}`; },
+    onclick: () => {
+      const files = paletteFiles?.files;
+      palette.close();
+      if (files) openWith(tool.id, files); else location.hash = `#${tool.id}`;
+    },
     onmousemove: () => { if (paletteIndex !== i) { paletteIndex = i; renderPalette(); } },
   }, [icon(tool.icon || tool.id, 18), el("span", { class: "palette-text" }, [el("strong", { text: tool.title }), el("small", { text: tool.description })]), el("kbd", { class: "palette-group", text: tool.group.title })])));
   if (!hits.length) paletteList.append(el("div", { class: "palette-empty", text: "No tool matches" }));
@@ -238,7 +253,7 @@ paletteInput.addEventListener("keydown", (e) => {
   else if (e.key === "Enter") { e.preventDefault(); items[paletteIndex]?.click(); }
 });
 palette.addEventListener("click", (e) => { if (e.target === palette) palette.close(); });
-document.getElementById("searchBtn").addEventListener("click", openPalette);
+document.getElementById("searchBtn").addEventListener("click", () => openPalette());
 
 const settingsDlg = document.getElementById("settings");
 function renderSettings() {
@@ -281,16 +296,41 @@ function renderShortcuts() {
 }
 
 const lightbox = document.getElementById("lightbox");
-function previewResult(r) {
+/** Show a file or result ({ name, blob }) in the lightbox: images and PDFs full size, text as text. */
+async function previewResult(r) {
   const body = lightbox.querySelector(".dialog-body");
   body.replaceChildren();
   lightbox.querySelector("h2").textContent = r.name;
-  const url = URL.createObjectURL(r.blob);
-  lightbox.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
-  if (r.blob.type.startsWith("image/")) body.append(el("img", { src: url, alt: r.name }));
-  else if (r.blob.type === "application/pdf") body.append(el("iframe", { src: url, title: r.name }));
-  else r.blob.slice(0, 200_000).text().then((text) => body.append(el("pre", { text: text + (r.blob.size > 200_000 ? "\n…" : "") })));
   lightbox.showModal();
+  let blob = r.blob;
+  if (isHeic(blob instanceof File ? blob : new File([blob], r.name, { type: blob.type }))) {
+    body.append(el("p", { class: "stat", text: t("Decoding…") }));
+    try { blob = await toBrowserImage(blob instanceof File ? blob : new File([blob], r.name, { type: blob.type })); }
+    catch (err) { body.replaceChildren(el("p", { class: "stat", text: err.message })); return; }
+    if (!lightbox.open) return;
+    body.replaceChildren();
+  }
+  const url = URL.createObjectURL(blob);
+  lightbox.addEventListener("close", () => URL.revokeObjectURL(url), { once: true });
+  if (blob.type.startsWith("image/")) body.append(el("img", { src: url, alt: r.name }));
+  else if (blob.type === "application/pdf") {
+    const width = Math.min(900, body.clientWidth - 32);
+    renderPdfPages(blob, body, width)
+      .then((free) => { if (lightbox.open) lightbox.addEventListener("close", free, { once: true }); else free(); })
+      .catch((err) => body.replaceChildren(el("p", { class: "stat", text: err.message })));
+  }
+  else blob.slice(0, 200_000).text().then((text) => body.append(el("pre", { text: text + (blob.size > 200_000 ? "\n…" : "") })));
+}
+
+/** A thumbnail that opens the file in the lightbox when it can be previewed. */
+function thumbFor(file, name = file.name) {
+  const canOpen = PREVIEWABLE({ blob: file }) || isHeic(file);
+  const thumb = el(canOpen ? "button" : "span", canOpen
+    ? { type: "button", class: "thumb", title: t("Preview"), "aria-label": t("Preview {name}", { name }), onclick: (e) => { e.stopPropagation(); previewResult({ name, blob: file }); } }
+    : { class: "thumb", "aria-hidden": "true" }, [icon(kindIcon(file), 18)]);
+  if (canOpen) thumb.draggable = false;
+  thumbnail(file).then((c) => { if (c) thumb.replaceChildren(c); });
+  return thumb;
 }
 for (const dlg of document.querySelectorAll("dialog")) {
   dlg.querySelector(".dialog-close")?.addEventListener("click", () => dlg.close());
@@ -326,14 +366,14 @@ function renderHome() {
   state.results = [];
   document.title = "FileForge";
   renderNav();
-  const search = el("button", { type: "button", class: "home-search", onclick: openPalette }, [icon("search"), el("span", { text: "Search 50+ tools…" }), el("kbd", { text: `${MOD} K` })]);
+  const search = el("button", { type: "button", class: "home-search", onclick: () => openPalette() }, [icon("search"), el("span", { text: "Search 50+ tools…" }), el("kbd", { text: `${MOD} K` })]);
   const fileInput = el("input", { type: "file", hidden: true, multiple: true, onchange: () => { openFiles([...fileInput.files]); fileInput.value = ""; } });
   const drop = el("section", { class: "dropzone home-drop", tabindex: "0", role: "button", "aria-label": "Choose files" }, [
     fileInput,
     el("div", { class: "dz-inner" }, [
       icon("upload", 28),
       el("div", {}, [el("strong", { text: "Drop any file here" }), " ", t("or"), " ", el("button", { class: "link", type: "button", text: "choose files", onclick: () => fileInput.click() })]),
-      el("div", { class: "dz-hint", text: "FileForge opens the right tool for it: images go to Crop, PDFs to Split, Markdown to the PDF editor" }),
+      el("div", { class: "dz-hint", text: "FileForge shows the tools that can open it: pick one, or press Enter for the suggested one" }),
     ]),
   ]);
   drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
@@ -378,11 +418,17 @@ function mount() {
   document.title = `${t(tool.title)} · FileForge`;
   renderNav();
 
+  const many = tool.multiple !== false;
   const fileInput = el("input", {
     type: "file", id: "fileInput", hidden: true,
-    multiple: tool.multiple !== false, accept: tool.accept || "",
+    // A ZIP can be picked too: addFiles unpacks it.
+    multiple: many, accept: tool.accept && many ? `${tool.accept},.zip` : tool.accept || "",
     onchange: () => { addFiles([...fileInput.files]); fileInput.value = ""; },
   });
+  const folderInput = many ? el("input", {
+    type: "file", hidden: true, webkitdirectory: "", multiple: true,
+    onchange: () => { addFiles([...folderInput.files].filter((f) => !JUNK.test(f.webkitRelativePath || f.name))); folderInput.value = ""; },
+  }) : null;
   const dropzone = el("section", { class: "dropzone", tabindex: "0", role: "button", "aria-label": tool.multiple === false ? "Choose a file" : "Choose files" }, [
     fileInput,
     el("div", { class: "dz-inner" }, [
@@ -391,6 +437,7 @@ function mount() {
         el("strong", { text: tool.multiple === false ? "Drop a file here" : "Drop files here" }),
         " ", t("or"), " ",
         el("button", { class: "link", type: "button", text: tool.multiple === false ? "choose a file" : "choose files", onclick: () => fileInput.click() }),
+        ...(folderInput ? [" ", t("or"), " ", el("button", { class: "link", type: "button", text: "a folder", onclick: () => folderInput.click() }), folderInput] : []),
       ]),
       el("div", { class: "dz-hint", text: tool.hint || "" }),
     ]),
@@ -438,14 +485,77 @@ function accepts(tool, f) {
   });
 }
 
-function addFiles(incoming) {
+// ---------- folders and ZIP archives ----------
+// A dropped folder is walked recursively and a .zip is unpacked, so "all the scans in this folder" or "the photos
+// someone sent as an archive" go straight into the tool. Hidden files and macOS resource forks are skipped.
+
+const JUNK = /(^|\/)(\.|__MACOSX\/|Thumbs\.db$|desktop\.ini$)/i;
+const MAX_EXPANDED = 2000;
+const isZip = (f) => f.type === "application/zip" || f.type === "application/x-zip-compressed" || /\.zip$/i.test(f.name);
+
+async function unzip(file) {
+  const zip = await JSZip.loadAsync(file);
+  const out = [];
+  for (const entry of Object.values(zip.files)) {
+    if (entry.dir || JUNK.test(entry.name)) continue;
+    if (out.length >= MAX_EXPANDED) break;
+    const name = entry.name.split("/").pop();
+    const blob = await entry.async("blob");
+    out.push(withType(new File([blob], name, { lastModified: entry.date?.getTime() || Date.now() })));
+  }
+  return out;
+}
+
+/** Folders (as drop entries) and ZIPs become the files inside them; ZIPs are kept as is for a tool that takes ZIPs. */
+async function expandFiles(files, tool = state.tool) {
+  const out = [];
+  for (const f of files) {
+    if (isZip(f) && !(tool && /zip/.test(tool.accept || ""))) {
+      try {
+        const inner = await unzip(f);
+        if (inner.length) toast(t("Unpacked {files} from {name}", { files: plural(inner.length, "file"), name: f.name }));
+        out.push(...inner);
+      } catch (err) { toast(t("Could not open {name}: {error}", { name: f.name, error: err.message || String(err) }), "error"); }
+    } else out.push(f);
+    if (out.length >= MAX_EXPANDED) break;
+  }
+  return out;
+}
+
+/** Every file under the dropped items, walking into folders. Must start inside the drop event. */
+function filesFromDrop(dt) {
+  const entries = [...(dt.items || [])].map((it) => (it.kind === "file" && it.webkitGetAsEntry ? it.webkitGetAsEntry() : null));
+  if (!entries.some((e) => e?.isDirectory)) return Promise.resolve([...(dt.files || [])]);
+  const out = [];
+  const readAll = (reader) => new Promise((res, rej) => {
+    const acc = [];
+    const next = () => reader.readEntries((batch) => { if (!batch.length) res(acc); else { acc.push(...batch); next(); } }, rej);
+    next();
+  });
+  const walk = async (entry) => {
+    if (!entry || out.length >= MAX_EXPANDED || JUNK.test(entry.name)) return;
+    if (entry.isFile) out.push(await new Promise((res, rej) => entry.file(res, rej)));
+    else if (entry.isDirectory) {
+      const children = await readAll(entry.createReader());
+      children.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+      for (const c of children) await walk(c);
+    }
+  };
+  return entries.reduce((p, e) => p.then(() => walk(e)), Promise.resolve()).then(() => out);
+}
+
+async function addFiles(incoming) {
   const tool = state.tool;
   if (!tool) return openFiles(incoming);
+  incoming = await expandFiles(incoming.map(withType), tool);
+  const skipped = [];
   const accepted = incoming.map(withType).filter((f) => {
     const ok = accepts(tool, f);
-    if (!ok) toast(t("Skipped {name}: not a supported file type for this tool", { name: f.name }), "error");
+    if (!ok) skipped.push(f.name);
     return ok;
   });
+  if (skipped.length === 1) toast(t("Skipped {name}: not a supported file type for this tool", { name: skipped[0] }), "error");
+  else if (skipped.length > 1) toast(t("Skipped {files} this tool does not take", { files: plural(skipped.length, "file") }), "error");
   if (!accepted.length) return;
   state.files = tool.multiple === false ? [accepted[0]] : [...state.files, ...accepted];
   state.results = [];
@@ -464,7 +574,7 @@ document.addEventListener("drop", (e) => {
   e.preventDefault();
   dragDepth = 0; dropOverlay.hidden = true;
   ui.dropzone?.classList.remove("over");
-  if (e.dataTransfer?.files?.length) addFiles([...e.dataTransfer.files]);
+  if (e.dataTransfer?.files?.length) filesFromDrop(e.dataTransfer).then(addFiles).catch((err) => toast(err.message, "error"));
 });
 
 // ---------- remembered options ----------
@@ -525,12 +635,14 @@ function refresh() {
     const list = el("ul", { class: `files${orderable ? " orderable" : ""}` });
     let dragFrom = null;
     state.files.forEach((f, i) => {
-      const thumb = el("span", { class: "thumb", "aria-hidden": "true" }, [icon(kindIcon(f), 18)]);
-      thumbnail(f).then((c) => { if (c) thumb.replaceChildren(c); });
+      const thumb = thumbFor(f);
+      const info = el("span", { class: "file-info" });
+      preview(f).then((p) => { info.textContent = p.info; });
       const row = el("li", { draggable: orderable ? "true" : null, "data-index": String(i) }, [
         orderable ? el("span", { class: "grip", title: "Drag to reorder", text: "⋮⋮" }) : null,
         thumb,
         el("span", { class: "file-name", text: f.name, title: f.name }),
+        info,
         el("span", { class: "file-size", text: formatBytes(f.size) }),
       ]);
       if (orderable) {
@@ -622,6 +734,21 @@ async function copyResult(r) {
 
 const PREVIEWABLE = (r) => r.blob.type.startsWith("image/") || r.blob.type === "application/pdf" || COPYABLE_TEXT.test(r.blob.type);
 
+async function saveToFolder(results) {
+  const dir = await window.showDirectoryPicker({ mode: "readwrite", id: "fileforge-results" });
+  const used = new Set();
+  for (const r of results) {
+    const dot = r.name.lastIndexOf("."), stem = dot > 0 ? r.name.slice(0, dot) : r.name, ext = dot > 0 ? r.name.slice(dot) : "";
+    let name = r.name, k = 1;
+    while (used.has(name.toLowerCase())) name = `${stem} (${++k})${ext}`;
+    used.add(name.toLowerCase());
+    const handle = await dir.getFileHandle(name, { create: true });
+    const w = await handle.createWritable();
+    await w.write(r.blob); await w.close();
+  }
+  toast(t("Saved {files} to {folder}", { files: plural(results.length, "file"), folder: dir.name }));
+}
+
 function renderResults() {
   ui.results.replaceChildren();
   ui.results.hidden = state.results.length === 0;
@@ -632,8 +759,7 @@ function renderResults() {
   const canCopy = (r) => navigator.clipboard && ((r.blob.type.startsWith("image/") && "ClipboardItem" in window && r.blob.type !== "image/svg+xml") || COPYABLE_TEXT.test(r.blob.type));
   for (const r of state.results) {
     const asFile = r.blob instanceof File ? r.blob : new File([r.blob], r.name, { type: r.blob.type });
-    const thumb = el("span", { class: "thumb", "aria-hidden": "true" }, [icon(kindIcon(asFile), 18)]);
-    thumbnail(asFile).then((c) => { if (c) thumb.replaceChildren(c); });
+    const thumb = thumbFor(asFile, r.name);
     list.append(el("li", {}, [
       thumb,
       el("span", { class: "file-name", text: r.name, title: r.name }),
@@ -653,6 +779,8 @@ function renderResults() {
       try { download(await zipFiles(state.results), `fileforge-${state.tool.id}.zip`); }
       catch (err) { toast(err.message, "error"); }
     } }, [icon("download", 16), t("Download all (.zip)")]));
+    // Chromium only: write every result straight into a folder the user picks, no archive to unpack.
+    if ("showDirectoryPicker" in window) actions.append(el("button", { type: "button", onclick: () => saveToFolder(state.results).catch((err) => { if (err.name !== "AbortError") toast(err.message, "error"); }) }, [icon("file", 16), t("Save all to a folder…")]));
   }
   // Hand the results to another tool (crop → compress → watermark) without downloading and re-dropping them.
   const asFiles = state.results.map((r) => new File([r.blob], r.name, { type: r.blob.type || guessType(r.name), lastModified: Date.now() }));
@@ -738,13 +866,33 @@ export function toolFor(file) {
   return null;
 }
 
-function openFiles(files) {
-  files = files.map(withType);
-  if (!files.length) return;
-  const id = toolFor(files[0]);
-  if (!id) { toast(t("No tool takes {name}", { name: files[0].name }), "error"); return; }
+/** The tools that can open these files, most likely first: the default for the type, favourites, recent, the rest. */
+function toolsFor(files) {
+  let list = tools.filter((x) => files.every((f) => accepts(x, f)) && (x.multiple !== false || files.length === 1));
+  // A mixed drop no tool takes whole: offer what opens the first file; the tool says which files it skipped.
+  if (!list.length) list = tools.filter((x) => accepts(x, files[0]));
+  // Several files rule out the one-file default (Crop, Split): suggest what people do with a batch instead.
+  let suggested = toolFor(files[0]);
+  if (!list.some((x) => x.id === suggested)) suggested = { crop: "compress", "pdf-split": "pdf-merge" }[suggested] || suggested;
+  const first = [suggested, ...favIds().filter((id) => id !== suggested), ...recentIds().filter((id) => id !== suggested)];
+  // Tools that take any file at all (hashes, Base64, rename) go last unless they are a favourite or recent.
+  const rank = (x) => { const i = first.indexOf(x.id); return i >= 0 ? i : first.length + (x.accept && x.accept !== "*/*" ? 0 : 1); };
+  return list.map((x, i) => ({ x, i })).sort((a, b) => rank(a.x) - rank(b.x) || a.i - b.i).map((o) => o.x);
+}
+
+function openWith(id, files) {
   if (id !== state.tool?.id) { history.replaceState(null, "", `${location.pathname}${location.search}#${id}`); mount(); }
   addFiles(files);
+}
+
+/** Files that arrived with no tool open (dropped on the home page, "Open with"): ask which tool should take them. */
+async function openFiles(files) {
+  files = await expandFiles(files.map(withType), null);
+  if (!files.length) return;
+  const list = toolsFor(files);
+  if (!list.length) { toast(t("No tool takes {name}", { name: files[0].name }), "error"); return; }
+  if (list.length === 1 || palette.open) { openWith(list[0].id, files); return; }
+  openPalette({ files, tools: list });
 }
 
 async function loadFromSrc() {

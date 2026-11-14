@@ -27,6 +27,11 @@ IMAGES
 • HEIC (iPhone photos) → JPG or PNG
 • Text watermark with live preview (corners, centre or tiled)
 • Redact: black out, pixelate or blur names, faces and card numbers on screenshots
+• Annotate screenshots: arrows, boxes, highlighter, text and numbered steps
+• ID and passport photos: 35 × 45, 3 × 4, 2 × 2 in, as one photo or a 10 × 15 / A4 print sheet
+• Scan document photos: straighten the page, make the paper white and save a PDF
+• Image to text (OCR): read photos, screenshots and scanned PDFs, save .txt or a searchable PDF (English and Ukrainian built in)
+• Transparent background for logos, signatures and product shots on a plain colour
 • Remove metadata: see the camera, date, exposure and GPS location first, then strip EXIF, GPS, XMP and comments without re-encoding
 • Compress to a target size, e.g. "under 200 KB"
 • Favicon and app-icon generator: favicon.ico, every PNG size, HTML snippet and web manifest
@@ -56,6 +61,9 @@ PDF
 • Stamp an image or signature on all, first, last or chosen pages
 • Extract the images embedded in a PDF at their original resolution
 • Booklet: re-order pages for double-sided printing that folds into a booklet
+• Sign and fill any PDF: draw, type or upload a signature, add text, the date and ticks anywhere
+• Protect a PDF with a password (AES-256) or remove a password you know; lift print and copy restrictions
+• Repair damaged PDFs, redact text for good, compare two versions of a PDF
 • Fill PDF forms (text, checkboxes, choices) and save them filled or flattened
 
 TEXT & DATA
@@ -63,6 +71,7 @@ TEXT & DATA
 • CSV ⇄ JSON
 • Format and validate JSON, with the exact position of an error
 • Base64 encode and decode, for text and files
+• Create and extract ZIP archives; save a whole batch of results straight into a folder
 • Markdown → HTML, standalone page or fragment
 • Text diff with a unified .diff export
 • Checksums: SHA-256, SHA-1, SHA-512, MD5, CRC32, and verification against an expected value
@@ -162,7 +171,7 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 - **sidePanel**: shows the FileForge page in Chrome's side panel when the user picks "Open in side panel" or the ◨ button; the page is the extension's own, and the permission gives no access to web pages.
 - **scripting**: only used when "Edit image in FileForge" is chosen on an image that exists solely inside the page (a `blob:` URL, e.g. an image editor's canvas or a pasted screenshot). A one-line script runs in that tab, after the user granted that site, to read that one image's bytes. No content scripts are registered and nothing runs on pages the user did not pick.
 - **Optional host permissions (`<all_urls>`)**: requested for a single site, only when the user chooses one of those menu items there, so the extension can fetch that image or PDF. Never requested up front.
-- **Sandbox page** (`app/heic-sandbox.html`): runs the HEIC decoder (heic2any / libheif), which needs `new Function`; it is isolated from the extension's privileges and only exchanges image bytes with the app page.
+- **`'wasm-unsafe-eval'` in the CSP**: lets the extension compile the WebAssembly it ships with: the HEIC decoder (libheif, `vendor/libheif-bundle.js`), the PDF password and repair engine (qpdf, `vendor/qpdf.wasm`) and the OCR engine (Tesseract, `vendor/ocr/`). JavaScript `eval` stays forbidden and no code or data is loaded from the network; the OCR language models are inside the package.
 
 ## Data usage
 

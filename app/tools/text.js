@@ -40,7 +40,7 @@ export function diffLines(a, b) {
   return ops.reverse();
 }
 
-function unified(ops, nameA, nameB) {
+export function unified(ops, nameA, nameB) {
   const out = [`--- ${nameA}`, `+++ ${nameB}`];
   let i = 0;
   while (i < ops.length) {

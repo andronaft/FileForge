@@ -10,7 +10,6 @@ Firefox differences applied automatically:
   - background.scripts instead of background.service_worker
   - optional_permissions instead of optional_host_permissions
   - browser_specific_settings.gecko (add-on id, min version, data collection = none)
-  - no "sandbox" key (Firefox does not support it; HEIC falls back to the web version)
   - sidebar_action instead of Chrome's side_panel key and sidePanel permission
 """
 import json, pathlib, shutil, zipfile
@@ -21,10 +20,6 @@ INCLUDE = ["background.js", "_locales", "app", "icons", "vendor", "LICENSE", "PR
 SKIP_SUFFIX = (".DS_Store",)
 
 AMO_ID = "fileforge@andronaft.github.io"
-
-
-# Firefox has no sandboxed extension pages, so the HEIC decoder cannot run there; leave it out.
-FIREFOX_EXCLUDE = {"app/heic-sandbox.html", "app/heic-sandbox.js", "vendor/heic2any.min.js"}
 
 
 def files(exclude=frozenset()):
@@ -64,7 +59,6 @@ build("chrome", chrome)
 
 firefox = dict(base)
 firefox["background"] = {"scripts": ["background.js"]}
-firefox.pop("sandbox", None)
 firefox.pop("optional_host_permissions", None)
 firefox.pop("side_panel", None)
 firefox["permissions"] = [p for p in base["permissions"] if p != "sidePanel"]
@@ -82,4 +76,4 @@ firefox["browser_specific_settings"] = {
         "data_collection_permissions": {"required": ["none"]},
     }
 }
-build("firefox", firefox, FIREFOX_EXCLUDE)
+build("firefox", firefox)

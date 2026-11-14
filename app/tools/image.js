@@ -1,5 +1,6 @@
 import { metadataTool } from "./metadata.js";
 import { el, baseName, field, select, number, checkbox, formatBytes, plural, toast, t } from "../util.js";
+import { isHeic, decodeHeic, canvasToBlob, warmHeic } from "../heic.js";
 
 // ---------- image engine ----------
 
@@ -21,6 +22,7 @@ async function sizedSvg(file) {
 const SVG_LONG_SIDE = 1024;
 
 async function loadImage(file) {
+  if (isHeic(file)) return (await decodeHeic(file))[0]; // iPhone photos: browsers other than Safari cannot read HEIC
   if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) file = await sizedSvg(file);
   try {
     return await createImageBitmap(file, { imageOrientation: "from-image" }); // honour the EXIF rotation of phone photos
@@ -120,6 +122,7 @@ const EXT = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
 function formatOf(file) {
   if (file.type === "image/jpeg" || file.type === "image/webp" || file.type === "image/png") return file.type;
+  if (isHeic(file)) return "image/jpeg"; // phone photos stay photos
   return null; // gif, bmp, svg, avif… are re-encoded as PNG when "keep" is chosen
 }
 
@@ -499,7 +502,7 @@ const compressTool = {
     const box = el("div", { class: "compare", hidden: true }, [before, afterWrap, divider, el("span", { class: "tag l", text: "Original" }), el("span", { class: "tag r", text: "Compressed" }), slider]);
     root.append(box);
     let img = null, token = 0, timer = null;
-    const fmtOf = () => { const f = o.format.value; return f === "auto" ? (file.type === "image/jpeg" ? "jpeg" : "webp") : f; };
+    const fmtOf = () => { const f = o.format.value; return f === "auto" ? (file.type === "image/jpeg" || isHeic(file) ? "jpeg" : "webp") : f; };
     const update = async () => {
       const my = ++token;
       if (!img) {
@@ -535,7 +538,7 @@ const compressTool = {
     for (const file of files) {
       await progress?.tick(file.name);
       let fmt = o.format.value;
-      if (fmt === "auto") fmt = file.type === "image/jpeg" ? "jpeg" : file.type === "image/webp" ? "webp" : "webp";
+      if (fmt === "auto") fmt = file.type === "image/jpeg" || isHeic(file) ? "jpeg" : "webp";
       const mime = MIME[fmt];
       const img = await loadImage(file);
       const d = dims(img);
@@ -848,44 +851,6 @@ const faviconTool = {
 };
 
 // ---------- HEIC ----------
-// heic2any (libheif) needs eval, which extension pages forbid, so it runs inside a sandboxed iframe.
-
-// Firefox has no sandboxed extension pages, so the Firefox package ships without the decoder.
-const HEIC_UNAVAILABLE = location.protocol === "moz-extension:";
-const WEB_APP = "https://andronaft.github.io/FileForge/app/";
-
-let heicFrame = null;
-let heicSeq = 0;
-const heicPending = new Map();
-
-function heicSandbox() {
-  if (heicFrame) return heicFrame.ready;
-  const frame = el("iframe", { src: "heic-sandbox.html", hidden: true, title: "HEIC decoder" });
-  frame.ready = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("HEIC decoder did not start. In the Firefox extension HEIC is unavailable; use the web version instead.")), 15000);
-    window.addEventListener("message", (e) => {
-      if (e.source !== frame.contentWindow || !e.data) return;
-      if (e.data.type === "heic-ready") { clearTimeout(timer); resolve(frame); return; }
-      const p = heicPending.get(e.data.id);
-      if (!p) return;
-      heicPending.delete(e.data.id);
-      if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data.buffers);
-    });
-  });
-  document.body.append(frame);
-  heicFrame = frame;
-  return frame.ready;
-}
-
-async function decodeHeic(file, toType, quality) {
-  const frame = await heicSandbox();
-  const id = ++heicSeq;
-  const buffer = await file.arrayBuffer();
-  return new Promise((resolve, reject) => {
-    heicPending.set(id, { resolve, reject });
-    frame.contentWindow.postMessage({ id, buffer, toType, quality }, "*", [buffer]);
-  });
-}
 
 const heicTool = {
   id: "heic",
@@ -895,30 +860,22 @@ const heicTool = {
   hint: "HEIC or HEIF files from an iPhone or iPad — multiple files allowed",
   runLabel: "Convert",
   renderOptions(root) {
-    if (HEIC_UNAVAILABLE) {
-      root.append(el("p", { class: "field-hint" }, [
-        "HEIC decoding needs a sandboxed page, which Firefox extensions do not have. Use the web version: ",
-        el("a", { href: WEB_APP + "#heic", target: "_blank", rel: "noopener" }, WEB_APP),
-      ]));
-      return;
-    }
     const fq = formatQualityRow("jpeg");
     root.append(fq.row);
     this.fq = fq;
-    heicSandbox().catch(() => {});
+    warmHeic();
   },
   async run(files, _root, progress) {
-    if (HEIC_UNAVAILABLE) throw new Error("HEIC is unavailable in the Firefox extension; use the web version at " + WEB_APP);
     const fmt = this.fq.format === "keep" ? "jpeg" : this.fq.format;
     const mime = MIME[fmt];
     const out = [];
     for (const file of files) {
       await progress?.tick(file.name);
-      const buffers = await decodeHeic(file, mime, this.fq.quality / 100);
-      buffers.forEach((buf, i) => {
-        const blob = new Blob([buf], { type: mime });
-        out.push({ name: `${baseName(file.name)}${buffers.length > 1 ? `-${i + 1}` : ""}.${EXT[mime]}`, blob, note: formatBytes(blob.size) });
-      });
+      const canvases = await decodeHeic(file, { all: true });
+      for (const [i, canvas] of canvases.entries()) {
+        const blob = await canvasToBlob(canvas, mime, this.fq.quality / 100);
+        out.push({ name: `${baseName(file.name)}${canvases.length > 1 ? `-${i + 1}` : ""}.${EXT[mime]}`, blob, note: `${canvas.width} × ${canvas.height} · ${formatBytes(blob.size)}` });
+      }
     }
     return out;
   },
@@ -1579,3 +1536,6 @@ function targetSize(s, v) {
 }
 
 export const imageTools = [cropTool, resizeTool, rotateTool, compressTool, convertTool, svgTool, heicTool, adjustTool, frameTool, collageTool, splitImageTool, compareTool, watermarkTool, redactTool, metadataTool, paletteTool, faviconTool, qrTool];
+
+// Shared with the photo tools (annotate, ID photo, document scan).
+export { loadImage, makeCanvas, dims, encode, formatQualityRow, formatOf, outName, MIME, EXT };

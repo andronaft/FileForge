@@ -8,7 +8,7 @@
 [![CI](https://github.com/andronaft/FileForge/actions/workflows/ci.yml/badge.svg)](https://github.com/andronaft/FileForge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 51 tools, everything runs on your device. Nothing is uploaded anywhere.
+Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 64 tools, everything runs on your device. Nothing is uploaded anywhere.
 
 ## Install
 
@@ -28,17 +28,22 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 
 ## Tools
 
-51 tools, all running in the page. Open the app and press **⌘K / Ctrl+K** to search them.
+64 tools, all running in the page. Drop a folder or a ZIP into any tool and the files inside go straight in. Open the app and press **⌘K / Ctrl+K** to search them.
 
 | Group | Tool | What it does |
 | --- | --- | --- |
 | Images | Crop | Drag a rectangle or type exact pixels, aspect-ratio presets |
+| Images | Annotate screenshot | Arrows, boxes, circles, highlighter, pen, text and numbered steps; undo/redo; paste a screenshot with Ctrl+V |
+| Images | ID & passport photo | 35 × 45, 3 × 4, 2 × 2 in and more with head-position guides; one photo, a 10 × 15 print sheet or an A4 PDF |
+| Images | Scan document photo | Finds the sheet's corners, straightens the perspective, whitens the paper (colour, grey or B&W) and saves all pages as one PDF |
+| Images | Image to text (OCR) | Reads photos, screenshots and scanned PDFs (English and Ukrainian built in, other languages from a .traineddata file); .txt or a searchable PDF that keeps the original pages |
+| Images | Transparent background | Makes a plain single-colour background transparent (logos, signatures, product shots), edge-connected or everywhere, smooth edges, trim |
 | Images | Resize | Pixels or percent, social presets (Instagram, Story, YouTube, Open Graph, LinkedIn…) with cover-crop or fit, batch |
 | Images | Rotate & flip | 90° / 180° / 270°, mirror horizontally or vertically, batch |
 | Images | Compress | Live before/after preview with the resulting size, quality slider, target size in KB, optional max dimension |
 | Images | Convert | JPEG ⇄ PNG ⇄ WebP (GIF, BMP, SVG, AVIF accepted as input) |
 | Images | SVG to PNG | Render SVG at an exact width, height or scale, 1×/2×/3× sets, transparent or solid background, PNG / JPEG / WebP |
-| Images | HEIC to JPG | iPhone HEIC/HEIF → JPEG, PNG or WebP (libheif in a sandboxed frame) |
+| Images | HEIC to JPG | iPhone HEIC/HEIF → JPEG, PNG or WebP (libheif WebAssembly in a worker) |
 | Images | Adjust | Brightness, contrast, saturation, hue, blur, sharpen, grayscale, sepia; one-click looks; live preview; batch |
 | Images | Frame, padding & corners | Coloured or transparent margin, border, rounded corners, soft shadow |
 | Images | Collage & contact sheet | Many photos in one grid with a gap, background, rounded cells and optional file names |
@@ -52,6 +57,7 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Images | QR code | Link, text, Wi-Fi, e-mail, phone, SMS or vCard as PNG or SVG, any colours |
 | PDF | Merge | Combine PDFs in the order you choose |
 | PDF | Split | Extract page ranges (click page thumbnails or type them), every page separately, or chunks of N pages |
+| PDF | Sign & fill | Draw, type or upload a signature and place it with text, the date, ticks and crosses anywhere on any PDF, rotated pages included |
 | PDF | Reorder pages | Drag page thumbnails into a new order, drop pages, reverse |
 | PDF | Rotate | All pages or a selection, several files at once |
 | PDF | Delete pages | Remove listed pages |
@@ -68,6 +74,11 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | PDF | PDF to images | PNG or JPEG at 72 / 150 / 300 dpi |
 | PDF | Extract images | The pictures embedded in a PDF at their original resolution |
 | PDF | PDF to text | Text layer as .txt or Markdown with a heading per page, wrapped lines re-joined |
+| PDF | Protect PDF | Password to open (AES-256) and permissions for printing, copying and editing |
+| PDF | Unlock PDF | Removes the password (you type it once) and lifts print / copy / edit restrictions |
+| PDF | Repair PDF | Rebuilds damaged or cut-off files, optional web optimisation (linearise) |
+| PDF | Redact PDF | Draw boxes or find a word; marked pages are rebuilt as images so the text is really gone |
+| PDF | Compare PDFs | Text diff of two versions with the pages that changed, saved as a .diff report |
 | Text & data | Markdown to PDF | Live preview, three stylesheets, A4 / Letter, print-to-PDF or HTML download |
 | Text & data | Markdown to HTML | Standalone page with a stylesheet or a bare HTML fragment |
 | Text & data | CSV ⇄ JSON | Auto-detects direction and delimiter, handles quoted cells |
@@ -82,6 +93,8 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Text & data | Regex tester | Live highlighted matches, groups, replacement preview |
 | Text & data | Colour converter & contrast | HEX / RGB / HSL / HSV, tints, shades, complement, CSS variables, WCAG contrast with AA / AAA verdicts |
 | Files | Rename files | Batch rename with {name} {n} {date} {time} {ext} patterns, find & replace (regex), case, Latin-only transliteration |
+| Files | Create ZIP | Pack files or a whole folder into one archive, three compression levels |
+| Files | Extract ZIP | Lists what is inside, extracts everything or names that match, results go straight into other tools |
 | Batch | Pipeline | Chain tools (resize → adjust → watermark → compress, merge → page numbers → compress) and run them on every file |
 
 Results can be previewed in place, handed straight to another tool ("Continue with"), downloaded as a single ZIP or copied to the clipboard. The file list shows thumbnails and can be reordered by dragging or sorted by name or date. Images can be pasted from the clipboard, dropped anywhere on the page, or opened from the OS "Open with" menu when the web version is installed as an app. Batches show a progress bar with a Cancel button, Ctrl/⌘+Enter runs the tool, and every tool remembers the options you used last time.
@@ -112,7 +125,7 @@ Then open `http://localhost:8765/app/index.html`.
 python3 scripts/package.py
 ```
 
-This writes `dist/fileforge-chrome-<version>.zip` and `dist/fileforge-firefox-<version>.zip`. The Firefox build swaps the background service worker for an event page, moves the optional host permission to `optional_permissions`, adds the Gecko add-on id, replaces Chrome's `side_panel` with `sidebar_action` and drops the sandbox page (so HEIC conversion is web-only on Firefox).
+This writes `dist/fileforge-chrome-<version>.zip` and `dist/fileforge-firefox-<version>.zip`. The Firefox build swaps the background service worker for an event page, moves the optional host permission to `optional_permissions`, adds the Gecko add-on id, replaces Chrome's `side_panel` with `sidebar_action`.
 
 ## Project layout
 
@@ -129,11 +142,15 @@ app/tools/pdf.js     PDF tools built on pdf-lib and pdf.js
 app/tools/markdown.js Markdown → PDF / HTML using marked
 app/tools/data.js    CSV ⇄ JSON, table converter, JSON format, Base64
 app/tools/text.js    Diff, checksums, word count & case, JWT, URL, regex, colour
-app/tools/files.js   Rename files
+app/tools/files.js   Rename files, create and extract ZIP
+app/tools/photo.js   Annotate, ID photo, document scan, transparent background
+app/tools/ocr.js     Image / scanned PDF to text and searchable PDF (Tesseract)
+app/tools/pdf-more.js Protect, unlock, repair (qpdf), redact and compare PDFs
+app/qpdf*.js         qpdf (WebAssembly) in a worker: passwords, permissions, repair
 app/tools/pipeline.js Chains other tools
-app/heic-sandbox.*   Sandboxed page that runs heic2any (needs eval)
+app/heic*.js         HEIC/HEIF decoding: libheif (WebAssembly) in a worker, shared by every image tool
 scripts/package.py   Builds Chrome and Firefox zips
-vendor/              pdf-lib, fontkit, pdf.js, marked, JSZip, heic2any, qrcode-generator, Noto Sans subset (vendored, no build step)
+vendor/              pdf-lib, fontkit, pdf.js, marked, JSZip, libheif-js, qpdf, Tesseract (vendor/ocr), qrcode-generator, Noto Sans subset (vendored, no build step)
 icons/               Extension icons (generated by scripts/make_icons.py)
 ```
 
@@ -143,8 +160,9 @@ No build step, no framework, no dependencies to install.
 
 - Everything runs in browser memory. Very large files (hundreds of MB) may be slow or fail.
 - "Compress PDF" rasterises pages, so text stops being selectable. Use it for scans and photo PDFs.
-- HEIC conversion needs the sandboxed page, which Firefox extensions do not support; the web version works everywhere.
 - DOCX ⇄ PDF is not implemented (needs a server-side converter).
+- OCR ships with English and Ukrainian. Other languages need a `.traineddata` file (from Tesseract's tessdata) added in the tool; handwriting is not recognised.
+- "Unlock PDF" removes a password you know; it does not guess or crack passwords.
 
 ## Web version
 
@@ -171,4 +189,6 @@ See [PRIVACY.md](PRIVACY.md). Short version: no uploads, no accounts, no analyti
 - [marked](https://github.com/markedjs/marked) — MIT
 - [JSZip](https://github.com/Stuk/jszip) — MIT or GPLv3
 - [pdf.js](https://github.com/mozilla/pdf.js) — Apache 2.0
-- [heic2any](https://github.com/alexcorvi/heic2any) — MIT (bundles libheif, LGPL)
+- [libheif-js](https://github.com/catdad-experiments/libheif-js) — LGPL-3.0 (libheif and libde265, see `vendor/libheif.LICENSE`)
+- [qpdf](https://github.com/qpdf/qpdf) 12.2 — Apache 2.0, WebAssembly build from [qpdf-wasm](https://github.com/neslinesli93/qpdf-wasm) (ISC)
+- [tesseract.js](https://github.com/naptha/tesseract.js) and [tesseract.js-core](https://github.com/naptha/tesseract.js-core) — Apache 2.0, with `eng` and `ukr` models from tessdata (Apache 2.0); the CDN defaults are patched out, see `vendor/ocr/README.md`

@@ -1,5 +1,5 @@
-// Tools that work on any file: batch rename.
-import { el, baseName, field, select, number, checkbox, plural, t } from "../util.js";
+// Tools that work on any file: batch rename, create and extract ZIP archives.
+import { el, baseName, field, select, number, checkbox, formatBytes, plural, guessType, t } from "../util.js";
 
 const CYR = { а: "a", б: "b", в: "v", г: "h", ґ: "g", д: "d", е: "e", є: "ie", ж: "zh", з: "z", и: "y", і: "i", ї: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts", ч: "ch", ш: "sh", щ: "shch", ь: "", ю: "iu", я: "ia", ы: "y", э: "e", ё: "e", ъ: "" };
 /** Latin letters, digits, dots, dashes and underscores only: transliterates Cyrillic, strips accents, turns spaces into dashes. */
@@ -77,4 +77,106 @@ const renameTool = {
   },
 };
 
-export const fileTools = [renameTool];
+// ---------- ZIP ----------
+
+/** `name`, or `name (2)`, `name (3)`… when it is already taken (case-insensitive). */
+function unique(name, used) {
+  const dot = name.lastIndexOf("."), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+  let out = name, k = 1;
+  while (used.has(out.toLowerCase())) out = `${stem} (${++k})${ext}`;
+  used.add(out.toLowerCase());
+  return out;
+}
+
+const zipCreateTool = {
+  id: "zip-create",
+  title: "Create ZIP",
+  description: "Pack files into one ZIP archive to send or upload them together. Drop a folder to pack everything inside it.",
+  keywords: ["archive", "compress files", "pack", "zip files", "bundle", "архів", "заархівувати", "запакувати"],
+  accept: "*/*",
+  hint: "Any files or a folder",
+  runLabel: "Create ZIP",
+  renderOptions(root, files) {
+    const name = el("input", { type: "text", value: "archive", placeholder: "archive", "data-remember": "" });
+    const level = select([["6", "Normal"], ["9", "Smallest (slower)"], ["0", "No compression (fastest, for photos and video)"]], "6");
+    const total = files.reduce((s, f) => s + f.size, 0);
+    root.append(el("div", { class: "row" }, [field("Archive name", name), field("Compression", level)]),
+      el("div", { class: "stat", text: `${plural(files.length, "file")} · ${formatBytes(total)}` }));
+    this.opts = { name, level };
+  },
+  async run(files, _root, progress) {
+    const zip = new JSZip(), used = new Set();
+    for (const f of files) zip.file(unique(f.name, used), f, { date: new Date(f.lastModified || Date.now()) });
+    const level = Number(this.opts.level.value);
+    progress?.start(100);
+    let last = 0;
+    const blob = await zip.generateAsync({ type: "blob", compression: level ? "DEFLATE" : "STORE", compressionOptions: { level: level || 1 } }, (m) => {
+      const pct = Math.floor(m.percent);
+      while (last < pct) { last++; progress?.tick(m.currentFile || ""); }
+    });
+    const total = files.reduce((s, f) => s + f.size, 0);
+    const stem = (this.opts.name.value.trim() || "archive").replace(/\.zip$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
+    return [{ name: `${stem}.zip`, blob, note: `${plural(files.length, "file")} · ${total ? Math.round((1 - blob.size / total) * 100) : 0}% ${t("smaller")}` }];
+  },
+};
+
+const zipExtractTool = {
+  id: "zip-extract",
+  title: "Extract ZIP",
+  description: "Open a ZIP archive, see what is inside and take the files out: all of them or only those whose name matches. Then send them straight into another tool.",
+  keywords: ["unzip", "unpack", "open archive", "decompress", "розпакувати", "розархівувати", "архів"],
+  accept: ".zip,application/zip,application/x-zip-compressed",
+  hint: "One or more ZIP archives",
+  runLabel: "Extract",
+  renderOptions(root, files) {
+    const info = el("div", { class: "stat", text: "Reading…" });
+    const filter = el("input", { type: "text", placeholder: ".pdf, invoice…", "data-noremember": "" });
+    const table = el("table", { class: "meta" });
+    root.append(el("div", { class: "row" }, [field("Only names containing", filter)]), info, el("div", { class: "table-wrap" }, [table]));
+    const st = { entries: [], filter };
+    this.state = st;
+    const paint = () => {
+      const q = filter.value.trim().toLowerCase();
+      const shown = st.entries.filter((e) => !q || e.path.toLowerCase().includes(q));
+      const size = shown.reduce((s, e) => s + e.size, 0);
+      info.textContent = st.error || `${plural(shown.length, "file")} · ${formatBytes(size)}${st.entries.length > shown.length ? ` (${t("of {n} in the archive", { n: st.entries.length })})` : ""}`;
+      table.replaceChildren(...shown.slice(0, 200).map((e) => el("tr", {}, [el("th", { text: e.path }), el("td", { text: formatBytes(e.size) })])));
+      if (shown.length > 200) table.append(el("tr", {}, [el("th", { text: t("… {n} more", { n: shown.length - 200 }) }), el("td", {})]));
+    };
+    filter.addEventListener("input", paint);
+    st.ready = (async () => {
+      for (const f of files) {
+        try {
+          const zip = await JSZip.loadAsync(f);
+          for (const entry of Object.values(zip.files)) {
+            if (entry.dir || /(^|\/)(__MACOSX\/|\.DS_Store$)/.test(entry.name)) continue;
+            st.entries.push({ entry, path: entry.name, size: entry._data?.uncompressedSize || 0 });
+          }
+        } catch (err) { st.error = t("Could not open {name}: {error}", { name: f.name, error: /encrypt/i.test(err.message) ? t("password-protected archives are not supported") : err.message }); }
+      }
+      paint();
+    })();
+  },
+  async run(_files, _root, progress) {
+    const st = this.state;
+    await st.ready;
+    if (st.error && !st.entries.length) throw new Error(st.error);
+    const q = st.filter.value.trim().toLowerCase();
+    const picked = st.entries.filter((e) => !q || e.path.toLowerCase().includes(q));
+    if (!picked.length) throw new Error("Nothing to extract");
+    if (picked.length > 2000) throw new Error("More than 2,000 files: narrow them down with the name filter");
+    progress?.start(picked.length);
+    const used = new Set(), out = [];
+    for (const e of picked) {
+      await progress?.tick(e.path);
+      let blob;
+      try { blob = await e.entry.async("blob"); }
+      catch (err) { throw new Error(t("Could not open {name}: {error}", { name: e.path, error: /encrypt/i.test(err.message) ? t("password-protected archives are not supported") : err.message })); }
+      const name = unique(e.path.split("/").pop(), used);
+      out.push({ name, blob: new File([blob], name, { type: guessType(name), lastModified: e.entry.date?.getTime() || Date.now() }), note: e.path.includes("/") ? e.path.slice(0, e.path.lastIndexOf("/")) : "" });
+    }
+    return out;
+  },
+};
+
+export const fileTools = [renameTool, zipCreateTool, zipExtractTool];

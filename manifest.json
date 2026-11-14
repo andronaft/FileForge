@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "__MSG_name__",
   "short_name": "__MSG_shortName__",
-  "version": "1.1.0",
+  "version": "1.3.0",
   "description": "__MSG_description__",
   "default_locale": "en",
   "homepage_url": "https://andronaft.github.io/FileForge/",
@@ -38,9 +38,7 @@
     "128": "icons/icon128.png",
     "256": "icons/icon256.png"
   },
-  "sandbox": {
-    "pages": [
-      "app/heic-sandbox.html"
-    ]
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   }
 }

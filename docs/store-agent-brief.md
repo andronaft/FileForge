@@ -169,10 +169,10 @@ Edit and convert the user's own image, PDF and text files locally in the browser
   Declared as an optional host permission only. It is requested for a single site, and only when the user picks "Edit image in FileForge" or "Open PDF in FileForge" on that site, so the extension can fetch that one image or PDF. Nothing is requested at install time and no page is read otherwise.
   ```
 
-- If the form also asks about the sandbox page or `sandbox` entry:
+- If the form asks why the CSP has `'wasm-unsafe-eval'`:
 
   ```
-  app/heic-sandbox.html runs the HEIC decoder (heic2any / libheif), which needs new Function. It is isolated from extension privileges and only exchanges image bytes with the app page via postMessage.
+  The extension ships three WebAssembly engines inside the package: the HEIC (iPhone photo) decoder libheif (vendor/libheif-bundle.js), the PDF password and repair engine qpdf (vendor/qpdf.wasm) and the OCR engine Tesseract with its English and Ukrainian models (vendor/ocr/). 'wasm-unsafe-eval' only lets the extension compile that bundled WebAssembly; no JavaScript eval is allowed and no code or data is loaded from the network.
   ```
 
 **Are you using remote code?**: `No, I am not using remote code`.
@@ -274,8 +274,6 @@ reviewer explain it. Continue.
 
   PRIVACY AND PERMISSIONS
   Everything runs locally: there is no server, no account, no analytics and no network requests. The add-on needs only the contextMenus permission for the right-click entries. When you use one of them on a page, it asks for access to that one site so it can read the image or PDF, and only then.
-
-  HEIC (iPhone photos) → JPG is available in the web version at https://andronaft.github.io/FileForge/ because the decoder needs a sandboxed page, which Firefox add-ons do not have.
 
   Open source: https://github.com/andronaft/FileForge
   ```
