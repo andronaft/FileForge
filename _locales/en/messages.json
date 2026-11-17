@@ -25,5 +25,11 @@
   },
   "menuTab": {
     "message": "Open in a tab"
+  },
+  "menuShotVisible": {
+    "message": "Screenshot the visible part"
+  },
+  "menuShotFull": {
+    "message": "Screenshot the whole page"
   }
 }

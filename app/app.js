@@ -5,6 +5,8 @@ import { createSearch } from "./search.js";
 import { imageTools } from "./tools/image.js";
 import { photoTools } from "./tools/photo.js";
 import { ocrTools } from "./tools/ocr.js";
+import { officeTools } from "./tools/office.js";
+import { videoTools } from "./tools/video.js";
 import { pdfTools, renderPdfPages } from "./tools/pdf.js";
 import { pdfMoreTools } from "./tools/pdf-more.js";
 import { markdownTools } from "./tools/markdown.js";
@@ -22,7 +24,9 @@ for (const n of document.querySelectorAll("[aria-label]")) n.setAttribute("aria-
 
 const groups = [
   { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1)] },
+  { id: "video", title: "Video", icon: "video", tools: videoTools },
   { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools, ...pdfMoreTools] },
+  { id: "office", title: "Word & Excel", icon: "office", tools: officeTools },
   { id: "text", title: "Text & data", icon: "text", tools: [...markdownTools, ...dataTools, ...textTools] },
   { id: "files", title: "Files", icon: "file", tools: fileTools },
   { id: "batch", title: "Batch", icon: "zap", tools: [pipelineTool] },
@@ -701,6 +705,9 @@ function refresh() {
 
 function kindIcon(f) {
   if (f.type.startsWith("image/")) return "image";
+  if (f.type.startsWith("video/")) return "video";
+  if (/wordprocessingml|msword/.test(f.type)) return "word";
+  if (/spreadsheet|ms-excel/.test(f.type)) return "excel-read";
   if (f.type === "application/pdf") return "pdf";
   if (f.type.startsWith("text/") || /json/.test(f.type)) return "text";
   return "file";
@@ -859,6 +866,10 @@ export function toolFor(file) {
   const ty = file.type;
   if (ty === "application/pdf") return "pdf-split";
   if (ty === "image/heic" || ty === "image/heif") return "heic";
+  if (ty.startsWith("video/")) return "video-gif";
+  if (/wordprocessingml/.test(ty)) return "word";
+  if (/spreadsheet|ms-excel/.test(ty)) return "excel-read";
+  if (/zip/.test(ty)) return "zip-extract";
   if (ty.startsWith("image/")) return "crop";
   if (/json/.test(ty)) return "json-format";
   if (/csv|tab-separated/.test(ty)) return "csv-json";
@@ -899,6 +910,7 @@ async function loadFromSrc() {
   const params = new URLSearchParams(location.search);
   const src = params.get("src");
   if (params.get("note") === "embedded") toast("That image is embedded in the page and could not be read. Save it and drop it here instead.", "error");
+  if (params.get("note") === "shot") toast("This page cannot be captured. Browser pages (settings, the extension store, the new tab page) are off limits to extensions.", "error");
   if (!src) return;
   history.replaceState(null, "", location.pathname + (sideView ? "?view=side" : "") + location.hash);
   try {

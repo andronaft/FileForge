@@ -279,6 +279,12 @@ table.meta td { padding: 3px 0; word-break: break-word; }
 .checker { background: repeating-conic-gradient(#d9dce3 0 25%, #fff 0 50%) 0 0 / 18px 18px; }
 .crop-stage canvas.checker { cursor: crosshair; }
 
+.doc-preview { height: 560px; }
+.sheet-preview td, .sheet-preview th { padding-right: 14px; white-space: nowrap; }
+.video-preview { display: block; max-width: 100%; background: #000; border-radius: var(--radius-s); }
+.video-row { align-items: center; }
+.video-scrub { flex: 1 1 260px; min-width: 160px; }
+
 .compare { position: relative; display: inline-block; max-width: 100%; overflow: hidden; border-radius: var(--radius-s); border: 1px solid var(--border); }
 .compare canvas { display: block; max-width: 100%; }
 .compare .after { position: absolute; inset: 0; clip-path: inset(0 0 0 50%); }

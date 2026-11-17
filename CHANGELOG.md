@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.4.0
+
+### Added
+
+- **Word to PDF**: open a .docx and save it as PDF (through the print dialog), a web page, Markdown or plain text.
+  Headings, lists, tables, links, bold and italic and pictures come across; the exact page layout does not.
+- **Excel to CSV / JSON**: .xlsx, .xls, .ods and Numbers exports to CSV, TSV, JSON, Markdown, HTML or SQL, every
+  sheet or the one you pick; dates come out as ISO dates.
+- **CSV / JSON to Excel**: tables to an .xlsx or .ods workbook, one sheet per file, numbers and dates kept as
+  numbers and dates, column widths set.
+- **Video to GIF**: pick the part of a clip, frame rate, width, speed (0.5× to 4×) and colours; loops.
+- **Video to images**: one frame every N seconds, N frames spread over the clip, or the frame you stop at.
+- **Page screenshots** in the extension: right-click a page (or the toolbar icon) → "Screenshot the visible
+  part" or "Screenshot the whole page". The whole page is scrolled and stitched, fixed headers appear once, and
+  the picture opens in Annotate screenshot. Needs the new `activeTab` permission, which shows no warning.
+- New sidebar groups *Video* and *Word & Excel*; dropping a video, .docx or spreadsheet suggests the right tool.
+
+### Changed
+
+- 69 tools in total (was 64). Word and Excel libraries (about 1.3 MB) load only when one of their tools opens.
+
 ## 1.3.0
 
 ### Added

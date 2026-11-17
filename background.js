@@ -5,6 +5,11 @@ const APP_URL = api.runtime.getURL("app/index.html");
 const t = (key) => api.i18n.getMessage(key);
 
 api.runtime.onInstalled.addListener(() => {
+  // Rebuilt from scratch on every install and update, so an id never exists twice.
+  api.contextMenus.removeAll(createMenus);
+});
+
+function createMenus() {
   // Right-click on the toolbar icon: switch between the side panel and a full tab.
   if (api.sidePanel || api.sidebarAction) {
     try {
@@ -20,7 +25,10 @@ api.runtime.onInstalled.addListener(() => {
     targetUrlPatterns: ["*://*/*.pdf", "*://*/*.pdf?*", "*://*/*.PDF"],
     documentUrlPatterns: ["*://*/*.pdf", "*://*/*.pdf?*", "*://*/*.PDF"],
   });
-});
+  // Screenshots of the page, opened in Annotate. The click grants activeTab for this one tab.
+  api.contextMenus.create({ id: "fileforge-shot", title: t("menuShotVisible"), contexts: ["page", "action"] });
+  api.contextMenus.create({ id: "fileforge-shot-full", title: t("menuShotFull"), contexts: ["page", "action"] });
+}
 
 // In Chrome, once the user picked the side panel, clicking the icon opens the panel itself (setPanelBehavior)
 // and this listener is not called. Firefox always comes here: the sidebar is toggled from its own UI or the icon menu.
@@ -70,8 +78,9 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 // Opens `tool` (null = the last used one) in the side panel when it is open or chosen, otherwise in a new tab.
-async function openApp(tool, params = {}, tab) {
-  if ((await panelOpen()) || (await panelPreferred())) {
+// `late`: the user's click was a while ago (a screenshot took seconds), so a closed panel can no longer be opened.
+async function openApp(tool, params = {}, tab, late = false) {
+  if ((await panelOpen()) || (!late && (await panelPreferred()))) {
     const open = tool ? { tool, params } : null;
     if (open) setPending(open);
     try { await showPanel(tab); } catch (_) { /* no user gesture left or already open; the panel still picks up `pending` */ }
@@ -127,8 +136,79 @@ async function openWith(tool, src, info, tab) {
   openApp(tool, granted ? { src } : {}, tab);
 }
 
+// ---------- screenshots ----------
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const blobToDataUrl = (blob) => new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
+const MAX_HEIGHT = 30000; // device pixels; canvases stop at 32767
+
+/** The visible part of the tab, or the whole page scrolled through and stitched together. */
+async function capture(tab, full) {
+  const shot = () => api.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  if (!full) return (await fetch(await shot())).blob();
+  const run = async (func, args = []) => (await api.scripting.executeScript({ target: { tabId: tab.id }, func, args }))[0]?.result;
+  const page = await run(() => {
+    const se = document.scrollingElement || document.documentElement;
+    return { h: innerHeight, total: Math.max(se.scrollHeight, document.body?.scrollHeight || 0), x: scrollX, y: scrollY, dpr: devicePixelRatio };
+  });
+  if (!page || page.total <= page.h + 2) return (await fetch(await shot())).blob();
+  const parts = [];
+  try {
+    for (let y = 0; y < page.total && y * page.dpr < MAX_HEIGHT; y += page.h) {
+      // From the second screen on, fixed and sticky bars (headers, cookie banners) are hidden so they appear once.
+      const at = await run((top, hide) => {
+        if (hide && !document.documentElement.dataset.ffShot) {
+          document.documentElement.dataset.ffShot = "1";
+          for (const n of document.querySelectorAll("body *")) {
+            const pos = getComputedStyle(n).position;
+            if (pos === "fixed" || pos === "sticky") { n.dataset.ffVis = n.style.visibility; n.style.visibility = "hidden"; }
+          }
+        }
+        scrollTo(0, top);
+        return scrollY;
+      }, [y, y > 0]);
+      await sleep(y === 0 ? 150 : 450); // lazy images, and Chrome allows two captures a second
+      parts.push({ y: at, blob: await (await fetch(await shot())).blob() });
+    }
+  } finally {
+    await run((x, y) => {
+      for (const n of document.querySelectorAll("[data-ff-vis]")) { n.style.visibility = n.dataset.ffVis; delete n.dataset.ffVis; }
+      delete document.documentElement.dataset.ffShot;
+      scrollTo(x, y);
+    }, [page.x, page.y]).catch(() => {});
+  }
+  const bitmaps = await Promise.all(parts.map((p) => createImageBitmap(p.blob)));
+  const k = bitmaps[0].height / page.h; // device pixels per CSS pixel, as captured
+  const height = Math.min(MAX_HEIGHT, Math.round(Math.max(...parts.map((p, i) => p.y * k + bitmaps[i].height))));
+  const canvas = new OffscreenCanvas(bitmaps[0].width, height);
+  const g = canvas.getContext("2d");
+  parts.forEach((p, i) => g.drawImage(bitmaps[i], 0, Math.round(p.y * k)));
+  return canvas.convertToBlob({ type: "image/png" });
+}
+
+async function screenshot(tab, full) {
+  let blob;
+  try { blob = await capture(tab, full); }
+  catch (_) { return openApp("annotate", { note: "shot" }, tab, true); }
+  if (blob.size > 25 * 1024 * 1024) { // keep the hand-over message small enough
+    const bmp = await createImageBitmap(blob);
+    const c = new OffscreenCanvas(bmp.width, bmp.height);
+    c.getContext("2d").drawImage(bmp, 0, 0);
+    blob = await c.convertToBlob({ type: "image/jpeg", quality: 0.9 });
+  }
+  let host = "page";
+  try { host = new URL(tab.url).hostname.replace(/^www\./, "") || host; } catch (_) { /* no URL access */ }
+  const d = new Date(), pad = (n) => String(n).padStart(2, "0");
+  const name = `screenshot-${host}-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.${blob.type === "image/jpeg" ? "jpg" : "png"}`;
+  const id = String(Date.now()) + Math.random().toString(36).slice(2);
+  handoff.set(id, { dataUrl: await blobToDataUrl(blob), name });
+  setTimeout(() => handoff.delete(id), 120_000);
+  return openApp("annotate", { src: `handoff:${id}` }, tab, full);
+}
+
 api.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId === "fileforge-image") openWith("crop", info.srcUrl, info, tab);
+  if (info.menuItemId === "fileforge-shot" || info.menuItemId === "fileforge-shot-full") screenshot(tab, info.menuItemId === "fileforge-shot-full");
+  else if (info.menuItemId === "fileforge-image") openWith("crop", info.srcUrl, info, tab);
   else if (info.menuItemId === "fileforge-pdf") openWith("pdf-split", info.linkUrl || info.pageUrl, info, tab);
   else if (info.menuItemId === "fileforge-side") {
     try { await showPanel(tab); } catch (_) { /* ignore */ }

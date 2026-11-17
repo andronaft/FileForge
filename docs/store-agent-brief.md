@@ -157,10 +157,16 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 
 **Permission justification** — one box per permission the dashboard lists:
 
+- `activeTab`:
+
+  ```
+  Used by the two right-click entries "Screenshot the visible part" and "Screenshot the whole page". When the user picks one, the extension captures that tab once (for the whole page it scrolls it, then scrolls back) and opens the picture in FileForge's annotation tool on the user's device. Nothing is captured without that click, and no other tab is read.
+  ```
+
 - `contextMenus`:
 
   ```
-  Adds "Edit image in FileForge" to the right-click menu of images and "Open PDF in FileForge" to PDF links and pages. That is the only way the extension touches a web page.
+  Adds "Edit image in FileForge" to the right-click menu of images, "Open PDF in FileForge" to PDF links and pages, and "Screenshot the visible part" / "Screenshot the whole page" to pages. These menu items are the only way the extension touches a web page.
   ```
 
 - Host permission (`<all_urls>`, listed under optional host permissions):

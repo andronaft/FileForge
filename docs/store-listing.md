@@ -32,6 +32,8 @@ IMAGES
 • Scan document photos: straighten the page, make the paper white and save a PDF
 • Image to text (OCR): read photos, screenshots and scanned PDFs, save .txt or a searchable PDF (English and Ukrainian built in)
 • Transparent background for logos, signatures and product shots on a plain colour
+• Video to GIF and video to images: pick the part, frame rate and size
+• Right-click any page → screenshot the visible part or the whole page, straight into the annotation tool
 • Remove metadata: see the camera, date, exposure and GPS location first, then strip EXIF, GPS, XMP and comments without re-encoding
 • Compress to a target size, e.g. "under 200 KB"
 • Favicon and app-icon generator: favicon.ico, every PNG size, HTML snippet and web manifest
@@ -71,6 +73,7 @@ TEXT & DATA
 • CSV ⇄ JSON
 • Format and validate JSON, with the exact position of an error
 • Base64 encode and decode, for text and files
+• Word to PDF, HTML or text; Excel and OpenDocument sheets to CSV / JSON and tables back to Excel
 • Create and extract ZIP archives; save a whole batch of results straight into a folder
 • Markdown → HTML, standalone page or fragment
 • Text diff with a unified .diff export
@@ -167,7 +170,8 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 
 ## Permission justifications
 
-- **contextMenus**: the "Edit image in FileForge" entry in the right-click menu of images and "Open PDF in FileForge" on PDF links and pages.
+- **activeTab**: lets "Screenshot the visible part" and "Screenshot the whole page" (right-click menu of a page or of the toolbar icon) capture the tab the user clicked in, once. Nothing is captured or read without that click, and no other tab is touched.
+- **contextMenus**: the "Edit image in FileForge" entry in the right-click menu of images, "Open PDF in FileForge" on PDF links and pages, and the two screenshot entries on pages.
 - **sidePanel**: shows the FileForge page in Chrome's side panel when the user picks "Open in side panel" or the ◨ button; the page is the extension's own, and the permission gives no access to web pages.
 - **scripting**: only used when "Edit image in FileForge" is chosen on an image that exists solely inside the page (a `blob:` URL, e.g. an image editor's canvas or a pasted screenshot). A one-line script runs in that tab, after the user granted that site, to read that one image's bytes. No content scripts are registered and nothing runs on pages the user did not pick.
 - **Optional host permissions (`<all_urls>`)**: requested for a single site, only when the user chooses one of those menu items there, so the extension can fetch that image or PDF. Never requested up front.

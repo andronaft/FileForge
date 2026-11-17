@@ -25,5 +25,11 @@
   },
   "menuTab": {
     "message": "Відкрити у вкладці"
+  },
+  "menuShotVisible": {
+    "message": "Знімок видимої частини"
+  },
+  "menuShotFull": {
+    "message": "Знімок усієї сторінки"
   }
 }
