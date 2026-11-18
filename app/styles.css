@@ -345,7 +345,9 @@ table.meta td { padding: 3px 0; word-break: break-word; }
 
 .doc-preview { height: 560px; }
 .sheet-preview td, .sheet-preview th { padding-right: 14px; white-space: nowrap; }
-.video-preview { display: block; max-width: 100%; background: #000; border-radius: var(--radius-s); }
+/* its own size, not stretched across the options column (a flex item would be) */
+.video-preview { display: block; align-self: flex-start; width: auto; height: auto; max-width: 100%; max-height: 50vh; background: #000; border-radius: var(--radius-s); }
+.video-probe { white-space: pre-line; }
 .video-row { align-items: center; }
 .video-scrub { flex: 1 1 260px; min-width: 160px; }
 

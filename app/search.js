@@ -66,7 +66,7 @@ const CONVERTERS = {
   "img>img": "convert", "img>pdf": "images-to-pdf", "pdf>img": "pdf-to-images", "pdf>text": "pdf-to-text", "heic>img": "heic", "heic>pdf": "images-to-pdf",
   "xlsx>csv": "excel-read", "xlsx>json": "excel-read", "xlsx>html": "excel-read", "xlsx>md": "excel-read", "csv>xlsx": "excel-write", "json>xlsx": "excel-write", "html>xlsx": "excel-write", "md>xlsx": "excel-write",
   "docx>pdf": "word", "docx>html": "word", "docx>md": "word", "docx>text": "word",
-  "img>gif": "images-to-gif", "video>gif": "video-gif", "video>img": "video-frames", "video>audio": "audio-extract", "audio>audio": "audio-extract",
+  "img>gif": "images-to-gif", "video>video": "video-convert", "video>gif": "video-gif", "video>img": "video-frames", "video>audio": "audio-extract", "audio>audio": "audio-extract",
   "svg>img": "svg-raster", "md>pdf": "md-to-pdf", "md>html": "md-to-html", "csv>json": "csv-json", "json>csv": "csv-json",
 };
 // "images from pdf", "pdf з фото", "jpg из pdf": with one of these between the two formats the source comes second.

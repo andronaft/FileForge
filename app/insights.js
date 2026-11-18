@@ -7,6 +7,7 @@ import { exifRows } from "./tools/metadata.js";
 const MB = 1024 * 1024;
 const isPdf = (f) => f.type === "application/pdf";
 const isImage = (f) => f.type.startsWith("image/");
+const isVideo = (f) => f.type.startsWith("video/");
 
 async function pdfFacts(file) {
   let doc;
@@ -59,6 +60,9 @@ export async function insights(files, budget = 2500) {
     if (pdfs.length && images.length) out.push({ text: t("Photos and PDFs together"), action: "Make one PDF", tool: "pdf-pack", files: files.filter((f) => isPdf(f) || isImage(f)) });
     if (pdfs.length === 1) out.push(...await pdfFacts(pdfs[0]).catch(() => []));
     if (images.length) out.push(...await imageFacts(images).catch(() => []));
+    const videos = files.filter(isVideo), vsize = videos.reduce((s, f) => s + f.size, 0);
+    if (videos.length && vsize > 16 * MB) out.push({ text: t("{size}: too big for most messengers and e-mail", { size: formatBytes(vsize) }), action: "Compress", tool: "video-compress", files: videos });
+    if (videos.some((f) => /quicktime|matroska/.test(f.type) || /\.(mov|mkv)$/i.test(f.name))) out.push({ text: t("MOV and MKV do not play everywhere"), action: "Convert to MP4", tool: "video-convert", files: videos });
     return out.slice(0, 3);
   })();
   return Promise.race([work, new Promise((res) => setTimeout(() => res([]), budget))]).catch(() => []);

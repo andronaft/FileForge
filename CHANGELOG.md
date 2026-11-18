@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.7.0
+
+### Added
+
+- **Compress video**: a quality preset, or a size limit (8 MB Discord, 16 MB WhatsApp, 25 MB e-mail or your own).
+  The bitrate goes down first and the resolution only when the limit needs it; a video too long for the limit is
+  refused with the smallest size that would work. MP4 or WebM, sound kept, mono or removed.
+- **Convert video**: iPhone MOV, MKV and WebM to MP4, MP4 to WebM, MOV or MKV. When the video inside already fits the
+  new format it is copied as it is, in seconds and with no quality lost; "play everywhere" re-encodes HEVC to H.264.
+- **Trim & edit video**: cut a part, turn it, mirror it, crop it to 9:16 (Reels, TikTok, Shorts), 1:1, 4:5 or 16:9,
+  shrink it to 1080p, 720p or 480p, or take the sound out.
+- Dropping a big video or a MOV / MKV on the home page suggests compressing or converting it; a video opens in
+  Compress video by default.
+
+The three tools use the browser's own video encoders (WebCodecs) and the Mediabunny library (MPL-2.0, 707 KB), which
+is loaded only when one of them is opened. Nothing is uploaded.
+
+### Fixed
+
+- The preview of Video to GIF and Video to images no longer stretches across the whole width of the page.
+- 78 tools in total (was 75).
+
 ## 1.6.0
 
 ### Added

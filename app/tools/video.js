@@ -199,3 +199,4 @@ const framesTool = {
 };
 
 export const videoTools = [gifTool, framesTool];
+export { timeline, openVideo, fmtTime, VIDEO_ACCEPT };

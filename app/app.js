@@ -8,6 +8,7 @@ import { photoTools } from "./tools/photo.js";
 import { ocrTools } from "./tools/ocr.js";
 import { officeTools } from "./tools/office.js";
 import { videoTools } from "./tools/video.js";
+import { videoEditTools } from "./tools/videoedit.js";
 import { qrTools, audioTools } from "./tools/media.js";
 import { pdfTools, renderPdfPages } from "./tools/pdf.js";
 import { pdfMoreTools } from "./tools/pdf-more.js";
@@ -30,7 +31,7 @@ for (const n of document.querySelectorAll("[title]")) n.title = t(n.title);
 
 const groups = [
   { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1), ...gifTools, ...qrTools] },
-  { id: "video", title: "Video & audio", icon: "video", tools: [...videoTools, ...audioTools] },
+  { id: "video", title: "Video & audio", icon: "video", tools: [...videoEditTools, ...videoTools, ...audioTools] },
   { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools.slice(0, 1), ...packTools, ...pdfTools.slice(1), ...pdfMoreTools] },
   { id: "office", title: "Word & Excel", icon: "office", tools: officeTools },
   { id: "text", title: "Text & data", icon: "text", tools: [...markdownTools, ...dataTools, ...textTools] },
@@ -412,7 +413,7 @@ function requestedToolId() {
   return location.hash.replace(/^#/, "") || "home";
 }
 
-const POPULAR = ["pdf-merge", "pdf-pack", "compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
+const POPULAR = ["pdf-merge", "pdf-pack", "compress", "video-compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
 
 function toolCard(tool) {
   return el("a", { class: "tool-card", href: `#${tool.id}`, "data-id": tool.id }, [
@@ -1011,6 +1012,15 @@ function makeProgress() {
       this.done++;
       await new Promise((r) => setTimeout(r, 0));
     },
+    /** How far the current step is (0-1), for one long file: moves the bar inside that step and shows `detail`. */
+    part(fraction, detail) {
+      const f = Math.min(1, Math.max(0, Number(fraction) || 0));
+      const pct = this.total ? Math.round(((Math.max(0, this.done - 1) + f) / this.total) * 100) : Math.round(f * 100);
+      box.hidden = false;
+      bar.style.width = `${pct}%`;
+      box.setAttribute("aria-valuenow", String(pct));
+      if (detail) text.textContent = detail;
+    },
     /** Detail inside one long step (the percent of a big file); Cancel stops it here too. */
     note(detail) { if (ctrl.signal.aborted) throw new Error("Cancelled"); text.textContent = detail; },
     cancel() { ctrl.abort(); box.hidden = false; text.textContent = t("Cancelling…"); },
@@ -1087,7 +1097,7 @@ export function toolFor(file) {
   const ty = file.type;
   if (ty === "application/pdf") return "pdf-split";
   if (ty === "image/heic" || ty === "image/heif") return "heic";
-  if (ty.startsWith("video/")) return "video-gif";
+  if (ty.startsWith("video/")) return "video-compress";
   if (ty.startsWith("audio/")) return "audio-extract";
   if (/wordprocessingml/.test(ty)) return "word";
   if (/spreadsheet|ms-excel/.test(ty)) return "excel-read";
