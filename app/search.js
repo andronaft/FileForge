@@ -27,7 +27,8 @@ const ALIASES = [
   [/^(поверн|поворот|розверн|разверн|переверн)/, ["rotate"]],
   [/^(подпис|підпис)/, ["sign", "підпис"]],
   [/^(конверт|преобраз|перетвор|формат)/, ["convert", "конверт"]],
-  [/^(ексел|эксел|excel|xlsx?$|таблиц)/, ["table", "csv", "таблиц"]],
+  [/^(ексел|эксел|excel|xlsx?$)/, ["excel", "xlsx"]],
+  [/^таблиц/, ["table", "excel", "csv", "таблиц"]],
   [/^скан/, ["scan"]],
   [/^(паспорт|віза$|виза$)/, ["passport", "паспорт"]],
   [/^(водян|вотермарк|ватермарк)/, ["watermark"]],
@@ -55,12 +56,17 @@ function alternatives(word) {
 
 // "X to Y" queries: the kind of each word, and the tool that converts the first kind into the second.
 const KINDS = [
+  ["xlsx", /^(xlsx?|xlsm|ods|excel|ексел.*|эксел.*)$/], ["docx", /^(docx?|word|ворд.*)$/], ["gif", /^(gif|гіф.*|гиф.*)$/], ["audio", /^(mp3|wav|audio|аудіо|аудио|звук.*)$/],
+  ["video", /^(mp4|mov|webm|mkv|video|відео|видео)$/],
   ["heic", /^(heic|heif)$/], ["svg", /^svg$/], ["pdf", /^pdf$/], ["md", /^(md|markdown)$/], ["csv", /^(csv|tsv)$/], ["json", /^json$/], ["html", /^html$/],
   ["text", /^(text|txt|текст.*)$/],
   ["img", /^(png|jpg|jpeg|webp|avif|gif|bmp|tiff?|image|images|photo|photos|picture|pictures|зображен.*|фото.*|картин.*)$/],
 ];
 const CONVERTERS = {
   "img>img": "convert", "img>pdf": "images-to-pdf", "pdf>img": "pdf-to-images", "pdf>text": "pdf-to-text", "heic>img": "heic", "heic>pdf": "images-to-pdf",
+  "xlsx>csv": "excel-read", "xlsx>json": "excel-read", "xlsx>html": "excel-read", "xlsx>md": "excel-read", "csv>xlsx": "excel-write", "json>xlsx": "excel-write", "html>xlsx": "excel-write", "md>xlsx": "excel-write",
+  "docx>pdf": "word", "docx>html": "word", "docx>md": "word", "docx>text": "word",
+  "video>gif": "video-gif", "video>img": "video-frames", "video>audio": "audio-extract", "audio>audio": "audio-extract",
   "svg>img": "svg-raster", "md>pdf": "md-to-pdf", "md>html": "md-to-html", "csv>json": "csv-json", "json>csv": "csv-json",
 };
 function converterFor(words) {

@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.5.0
+
+### Added
+
+- **Smart PDF compression**: the default mode of Compress PDF now shrinks the pictures inside the file and keeps
+  the text selectable. An optional size limit ("Fit into 5 MB") lowers the quality step by step until the file
+  fits, and turns pages into pictures only as a last resort.
+- **Organise pages** (was Reorder pages): the pages of several PDFs on one board. Drag to reorder across files,
+  rotate or drop single pages, save one PDF.
+- **Read QR code**: what a QR code or barcode in a screenshot or photo says: link (shown with its site, never
+  opened for you), Wi-Fi password, contact or text.
+- **Video to MP3**: the sound of a video, or an audio file (M4A, OGG, WAV, FLAC), as MP3 or WAV, with trim and mono.
+- **Drag a result out** of FileForge straight into a folder, a mail or a chat (Chromium browsers).
+- Home page: a *Popular* row for new users and links that jump to each tool group.
+
+### Changed
+
+- Tool cards on the home page use their full width for the text; the favourite star sits in the corner.
+- Sidebar groups fold away with a click and show how many tools they hold; the choice is remembered.
+- The drop area shrinks to a slim "add more" bar once files are in, so the options come up the screen.
+- 71 tools in total (was 69).
+
+### Fixed
+
+- Every PDF used to start its own pdf.js worker and load 1.4 MB of code again; twenty files meant twenty workers.
+  All PDF tools, thumbnails and previews now share one worker.
+- Pressing Run before a video, a page board or a preview had finished loading failed with "Preview is not ready
+  yet" or "Keep at least one page". Run now waits for it.
+- The search placeholder said "50+ tools"; it shows the real number. `xlsx to csv`, `docx to pdf` and
+  `mp4 to mp3` queries put the right converter first.
+- A few strings were still English in the Ukrainian interface.
+
 ## 1.4.0
 
 ### Added

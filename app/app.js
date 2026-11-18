@@ -7,6 +7,7 @@ import { photoTools } from "./tools/photo.js";
 import { ocrTools } from "./tools/ocr.js";
 import { officeTools } from "./tools/office.js";
 import { videoTools } from "./tools/video.js";
+import { qrTools, audioTools } from "./tools/media.js";
 import { pdfTools, renderPdfPages } from "./tools/pdf.js";
 import { pdfMoreTools } from "./tools/pdf-more.js";
 import { markdownTools } from "./tools/markdown.js";
@@ -23,8 +24,8 @@ for (const n of document.querySelectorAll("[data-i18n-placeholder]")) n.placehol
 for (const n of document.querySelectorAll("[aria-label]")) n.setAttribute("aria-label", t(n.getAttribute("aria-label")));
 
 const groups = [
-  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1)] },
-  { id: "video", title: "Video", icon: "video", tools: videoTools },
+  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1), ...qrTools] },
+  { id: "video", title: "Video & audio", icon: "video", tools: [...videoTools, ...audioTools] },
   { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools, ...pdfMoreTools] },
   { id: "office", title: "Word & Excel", icon: "office", tools: officeTools },
   { id: "text", title: "Text & data", icon: "text", tools: [...markdownTools, ...dataTools, ...textTools] },
@@ -99,21 +100,37 @@ export function searchTools(q) { return search(q); }
 function navLink(tool) {
   return el("a", { class: `nav-item${state.tool?.id === tool.id ? " active" : ""}`, href: `#${tool.id}`, "data-id": tool.id }, [icon(tool.icon || tool.id, 16), el("span", { text: tool.title })]);
 }
+// Sidebar groups fold away (remembered in this browser); a folded group still shows the tool that is open.
+function collapsedGroups() { try { return new Set(JSON.parse(localStorage.getItem("fileforge.navCollapsed") || "[]")); } catch (_) { return new Set(); } }
+function toggleGroup(id) {
+  const set = collapsedGroups();
+  if (set.has(id)) set.delete(id); else set.add(id);
+  try { localStorage.setItem("fileforge.navCollapsed", JSON.stringify([...set])); } catch (_) { /* ignore */ }
+  renderNav();
+}
+function navGroup(id, title, count, collapsed) {
+  return el("button", { type: "button", class: "nav-group", "aria-expanded": collapsed ? "false" : "true", onclick: () => toggleGroup(id) }, [
+    el("span", { class: "nav-group-title", text: title }), el("span", { class: "nav-count", text: String(count) }), icon("chevron", 14),
+  ]);
+}
 function renderNav() {
   navList.replaceChildren();
+  const collapsed = collapsedGroups();
   navSelect.replaceChildren(el("option", { value: "home", text: "All tools", selected: !state.tool }));
   const q = navFilter.value.trim();
   const shown = new Set(searchTools(q).map((x) => x.id));
   const favs = favIds().map((id) => tools.find((x) => x.id === id)).filter((x) => shown.has(x.id));
   if (favs.length) {
-    navList.append(el("div", { class: "nav-group", text: "Favourites" }));
-    for (const tool of favs) navList.append(navLink(tool));
+    const folded = !q && collapsed.has("favourites");
+    navList.append(navGroup("favourites", "Favourites", favs.length, folded));
+    for (const tool of favs) if (!folded) navList.append(navLink(tool));
   }
   for (const g of groups) {
     const items = g.tools.filter((x) => shown.has(x.id));
     if (!items.length) continue;
-    navList.append(el("div", { class: "nav-group", text: g.title }));
-    for (const tool of items) navList.append(navLink(tool));
+    const folded = !q && collapsed.has(g.id); // a search always shows its matches
+    navList.append(navGroup(g.id, g.title, items.length, folded));
+    for (const tool of items) if (!folded || state.tool?.id === tool.id) navList.append(navLink(tool));
     const optgroup = el("optgroup", { label: t(g.title) });
     for (const tool of g.tools) optgroup.append(el("option", { value: tool.id, text: tool.title, selected: state.tool?.id === tool.id }));
     navSelect.append(optgroup);
@@ -357,6 +374,8 @@ function requestedToolId() {
   return new URLSearchParams(location.search).get("tool") || "home";
 }
 
+const POPULAR = ["pdf-merge", "compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
+
 function toolCard(tool) {
   return el("a", { class: "tool-card", href: `#${tool.id}`, "data-id": tool.id }, [
     el("span", { class: "tool-card-icon" }, [icon(tool.icon || tool.id, 22)]),
@@ -370,7 +389,7 @@ function renderHome() {
   state.results = [];
   document.title = "FileForge";
   renderNav();
-  const search = el("button", { type: "button", class: "home-search", onclick: () => openPalette() }, [icon("search"), el("span", { text: "Search 50+ tools…" }), el("kbd", { text: `${MOD} K` })]);
+  const search = el("button", { type: "button", class: "home-search", onclick: () => openPalette() }, [icon("search"), el("span", { text: t("Search {n} tools…", { n: tools.length }) }), el("kbd", { text: `${MOD} K` })]);
   const fileInput = el("input", { type: "file", hidden: true, multiple: true, onchange: () => { openFiles([...fileInput.files]); fileInput.value = ""; } });
   const drop = el("section", { class: "dropzone home-drop", tabindex: "0", role: "button", "aria-label": "Choose files" }, [
     fileInput,
@@ -384,10 +403,14 @@ function renderHome() {
   ui.dropzone = drop;
   const recent = recentIds().map((id) => tools.find((x) => x.id === id));
   const favs = favIds().map((id) => tools.find((x) => x.id === id));
-  const sections = groups.map((g) => el("section", { class: "home-group" }, [
+  const sections = groups.map((g) => el("section", { class: "home-group", id: `group-${g.id}` }, [
     el("h2", {}, [icon(g.icon, 18), el("span", { text: g.title }), el("span", { class: "count", text: String(g.tools.length) })]),
     el("div", { class: "tool-grid" }, g.tools.map(toolCard)),
   ]));
+  const chip = (tool) => el("a", { class: "chip", href: `#${tool.id}` }, [icon(tool.icon || tool.id, 16), el("span", { text: tool.title })]);
+  // The page is long: a row of group links, and the most common jobs until the user has their own recent ones.
+  const jump = el("nav", { class: "chips jump", "aria-label": "Tool groups" }, groups.map((g, i) => el("button", { type: "button", class: "chip", onclick: () => sections[i].scrollIntoView({ behavior: "smooth", block: "start" }) }, [icon(g.icon, 16), el("span", { text: g.title }), el("span", { class: "count", text: String(g.tools.length) })])));
+  const popular = POPULAR.map((id) => tools.find((x) => x.id === id)).filter(Boolean);
   main.replaceChildren(...[
     el("section", { class: "hero" }, [
       el("h1", { text: "Every file job, done on your device" }),
@@ -395,8 +418,10 @@ function renderHome() {
       search,
     ]),
     drop,
-    favs.length ? el("section", { class: "home-group" }, [el("h2", {}, [icon("star", 18), el("span", { text: "Favourites" })]), el("div", { class: "chips" }, favs.map((tool) => el("a", { class: "chip", href: `#${tool.id}` }, [icon(tool.icon || tool.id, 16), el("span", { text: tool.title })])))]) : null,
-    recent.length ? el("section", { class: "home-group" }, [el("h2", {}, [icon("zap", 18), el("span", { text: "Recent" })]), el("div", { class: "chips" }, recent.map((tool) => el("a", { class: "chip", href: `#${tool.id}` }, [icon(tool.icon || tool.id, 16), el("span", { text: tool.title })])))]) : null,
+    favs.length ? el("section", { class: "home-group" }, [el("h2", {}, [icon("star", 18), el("span", { text: "Favourites" })]), el("div", { class: "chips" }, favs.map(chip))]) : null,
+    recent.length ? el("section", { class: "home-group" }, [el("h2", {}, [icon("zap", 18), el("span", { text: "Recent" })]), el("div", { class: "chips" }, recent.map(chip))]) : null,
+    recent.length < 3 ? el("section", { class: "home-group" }, [el("h2", {}, [icon("zap", 18), el("span", { text: "Popular" })]), el("div", { class: "chips" }, popular.filter((x) => !recent.includes(x)).map(chip))]) : null,
+    jump,
     ...sections,
     el("footer", { class: "home-foot" }, [
       el("span", {}, [icon("shield", 16), " ", t("Private by design: no server, no account, no analytics.")]),
@@ -633,6 +658,7 @@ function restoreOptions() {
 function refresh() {
   const tool = state.tool;
   const hasFiles = state.files.length > 0;
+  ui.dropzone?.classList.toggle("compact", hasFiles); // the big target has done its job; leave a slim "add more" bar
   ui.fileList.replaceChildren();
   if (hasFiles) {
     const orderable = tool.orderable && state.files.length > 1;
@@ -706,6 +732,7 @@ function refresh() {
 function kindIcon(f) {
   if (f.type.startsWith("image/")) return "image";
   if (f.type.startsWith("video/")) return "video";
+  if (f.type.startsWith("audio/")) return "audio";
   if (/wordprocessingml|msword/.test(f.type)) return "word";
   if (/spreadsheet|ms-excel/.test(f.type)) return "excel-read";
   if (f.type === "application/pdf") return "pdf";
@@ -767,7 +794,16 @@ function renderResults() {
   for (const r of state.results) {
     const asFile = r.blob instanceof File ? r.blob : new File([r.blob], r.name, { type: r.blob.type });
     const thumb = thumbFor(asFile, r.name);
-    list.append(el("li", {}, [
+    const row = el("li", { draggable: "true", title: t("Drag it out to a folder, a mail or a chat") });
+    row.addEventListener("dragstart", (e) => {
+      const url = URL.createObjectURL(asFile);
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.setData("DownloadURL", `${asFile.type || "application/octet-stream"}:${r.name.replace(/:/g, "-")}:${url}`);
+      try { e.dataTransfer.items.add(asFile); } catch (_) { /* older browsers */ }
+    });
+    list.append(row);
+    row.append(...[
       thumb,
       el("span", { class: "file-name", text: r.name, title: r.name }),
       el("span", { class: "file-size", text: formatBytes(r.blob.size) }),
@@ -777,7 +813,7 @@ function renderResults() {
         canCopy(r) ? el("button", { type: "button", class: "icon", title: "Copy to the clipboard", "aria-label": "Copy", onclick: () => copyResult(r).catch((err) => toast(t("Could not copy: {error}", { error: err.message }), "error")) }, [icon("copy", 16)]) : null,
         el("button", { type: "button", class: "small", onclick: () => download(r.blob, r.name) }, [icon("download", 14), t("Download")]),
       ]),
-    ]));
+    ].filter(Boolean));
   }
   ui.results.append(list);
   const actions = el("div", { class: "actions" });
@@ -825,6 +861,8 @@ function makeProgress() {
       this.done++;
       await new Promise((r) => setTimeout(r, 0));
     },
+    /** Detail inside one long step (the percent of a big file); Cancel stops it here too. */
+    note(detail) { if (ctrl.signal.aborted) throw new Error("Cancelled"); text.textContent = detail; },
     cancel() { ctrl.abort(); text.textContent = t("Cancelling…"); },
   };
 }
@@ -867,6 +905,7 @@ export function toolFor(file) {
   if (ty === "application/pdf") return "pdf-split";
   if (ty === "image/heic" || ty === "image/heif") return "heic";
   if (ty.startsWith("video/")) return "video-gif";
+  if (ty.startsWith("audio/")) return "audio-extract";
   if (/wordprocessingml/.test(ty)) return "word";
   if (/spreadsheet|ms-excel/.test(ty)) return "excel-read";
   if (/zip/.test(ty)) return "zip-extract";

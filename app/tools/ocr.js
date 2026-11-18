@@ -3,7 +3,7 @@
 import { el, baseName, field, select, checkbox, plural, toast, t } from "../util.js";
 import { getLang } from "../i18n.js";
 import { loadImage, dims, makeCanvas } from "./image.js";
-import { pdfjsLib, loadPdf, pdfBlob, canvasBlob, fontFor } from "./pdf.js";
+import { pdfjsOpen, loadPdf, pdfBlob, canvasBlob, fontFor } from "./pdf.js";
 import { copyButton } from "./data.js";
 
 const { PDFDocument, degrees } = PDFLib;
@@ -127,7 +127,7 @@ const ocrTool = {
     const jobs = [];
     for (const file of files) {
       if (file.type === "application/pdf") {
-        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+        const pdf = await pdfjsOpen(new Uint8Array(await file.arrayBuffer()));
         for (let n = 1; n <= pdf.numPages; n++) jobs.push({ file, pdf, n });
       } else jobs.push({ file });
     }

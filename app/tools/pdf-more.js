@@ -1,6 +1,6 @@
 // More PDF tools: passwords and permissions (qpdf), repair, true redaction and text comparison.
 import { el, baseName, field, select, checkbox, formatBytes, plural, toast, t } from "../util.js";
-import { pdfjsLib, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, canvasBlob } from "./pdf.js";
+import { pdfjsOpen, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, canvasBlob } from "./pdf.js";
 import { qpdf, qpdfMessage, pdfLock, decryptPdf, PdfPasswordError } from "../qpdf.js";
 import { diffLines, unified } from "./text.js";
 
@@ -274,7 +274,7 @@ const redactPdfTool = {
     const st = this.state, o = this.opts;
     if (!st?.boxes.length && !o.all.input.checked) throw new Error("Mark at least one area to hide");
     const src = await loadPdf(files[0]);
-    const doc = await pdfjsLib.getDocument({ data: await bytesOf(files[0]), isEvalSupported: false }).promise;
+    const doc = await pdfjsOpen(await bytesOf(files[0]));
     const out = await PDFDocument.create();
     const scale = (Number(o.dpi.value) || 200) / 72;
     let rebuilt = 0;
@@ -306,7 +306,7 @@ const redactPdfTool = {
 
 /** The text of a PDF as lines, each tagged with its page number. */
 async function pdfLines(file) {
-  const doc = await pdfjsLib.getDocument({ data: await bytesOf(file), isEvalSupported: false }).promise;
+  const doc = await pdfjsOpen(await bytesOf(file));
   const out = [];
   try {
     for (let n = 1; n <= doc.numPages; n++) {
@@ -349,7 +349,7 @@ const comparePdfTool = {
       if (shown.length > 3000) out.append(el("span", { class: "l ctx", text: t("… {n} more lines", { n: shown.length - 3000 }) }));
     };
     onlyChanges.input.addEventListener("change", show);
-    (async () => {
+    this.ready = (async () => {
       const [a, b] = await Promise.all([pdfLines(fa), pdfLines(fb)]);
       if (!a.lines.length && !b.lines.length) { summary.textContent = t("Neither PDF has a text layer (scans?). Run them through Image to text (OCR) first."); summary.className = "stat bad"; return; }
       if (a.lines.length + b.lines.length > 40000) { summary.textContent = t("Too long to compare: keep both PDFs under 20,000 lines of text"); return; }
@@ -363,11 +363,13 @@ const comparePdfTool = {
       summary.textContent = this.summary;
       summary.className = `stat ${add.length || del.length ? "" : "ok"}`;
       show();
-    })().catch((err) => { summary.textContent = err.message; summary.className = "stat bad"; });
+    })();
+    this.ready.catch((err) => { summary.textContent = err.message; summary.className = "stat bad"; });
   },
   async run(files) {
     if (files.length !== 2) throw new Error("Add exactly two PDFs: the original and the changed one");
-    if (!this.ops) throw new Error("Preview is not ready yet");
+    await this.ready;
+    if (!this.ops) throw new Error("There is no text to compare in these PDFs");
     const text = `${this.summary}\n\n${unified(this.ops, this.names[0], this.names[1])}`;
     return [{ name: `${baseName(files[1].name)}-changes.diff`, blob: new Blob([text], { type: "text/plain" }), note: formatBytes(text.length) }];
   },

@@ -348,7 +348,7 @@ const idPhotoTool = {
     sheet.addEventListener("change", () => draw()); dpi.addEventListener("change", () => draw());
     customRow.hidden = true;
 
-    (async () => {
+    this.ready = (async () => {
       st.img ??= await loadImage(file);
       const d = dims(st.img); st.w = d.w; st.h = d.h;
       st.scale = stageScale(root, d.w, d.h);
@@ -356,7 +356,8 @@ const idPhotoTool = {
       customRow.hidden = preset.value !== "custom";
       if (!st.frame) fitFrame(false); else fitFrame(true);
       draw();
-    })().catch((err) => toast(err.message, "error"));
+    })();
+    this.ready.catch((err) => toast(err.message, "error"));
 
     let mode = null, start = null, orig = null, corner = -1;
     canvas.addEventListener("pointerdown", (e) => {
@@ -387,6 +388,7 @@ const idPhotoTool = {
     canvas.addEventListener("pointercancel", end);
   },
   async run(files) {
+    await this.ready;
     const st = this.state, o = this.opts;
     if (!st?.frame) throw new Error("Preview is not ready yet");
     const s = this.spec(), dpi = Number(o.dpi.value) || 300;

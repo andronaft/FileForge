@@ -1,6 +1,6 @@
 # FileForge privacy policy
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 
 FileForge processes files entirely on your device, inside your browser.
 

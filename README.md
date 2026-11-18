@@ -8,7 +8,7 @@
 [![CI](https://github.com/andronaft/FileForge/actions/workflows/ci.yml/badge.svg)](https://github.com/andronaft/FileForge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 69 tools, everything runs on your device. Nothing is uploaded anywhere.
+Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 71 tools, everything runs on your device. Nothing is uploaded anywhere.
 
 ## Install
 
@@ -28,7 +28,7 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 
 ## Tools
 
-69 tools, all running in the page. Drop a folder or a ZIP into any tool and the files inside go straight in. Open the app and press **⌘K / Ctrl+K** to search them.
+71 tools, all running in the page. Drop a folder or a ZIP into any tool and the files inside go straight in. Open the app and press **⌘K / Ctrl+K** to search them.
 
 | Group | Tool | What it does |
 | --- | --- | --- |
@@ -55,10 +55,11 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Images | Colour palette | Dominant colours as HEX / RGB / HSL, CSS variables, JSON and a swatch PNG |
 | Images | Favicon & app icons | favicon.ico + PNG set + Apple touch + PWA icons + HTML snippet + webmanifest |
 | Images | QR code | Link, text, Wi-Fi, e-mail, phone, SMS or vCard as PNG or SVG, any colours |
+| Images | Read QR code | Decodes QR codes and barcodes in screenshots and photos: link (shown, not opened), Wi-Fi password, contact, text |
 | PDF | Merge | Combine PDFs in the order you choose |
 | PDF | Split | Extract page ranges (click page thumbnails or type them), every page separately, or chunks of N pages |
 | PDF | Sign & fill | Draw, type or upload a signature and place it with text, the date, ticks and crosses anywhere on any PDF, rotated pages included |
-| PDF | Reorder pages | Drag page thumbnails into a new order, drop pages, reverse |
+| PDF | Organise pages | Every page of one or several PDFs on one board: drag to reorder, rotate or drop single pages, save one PDF |
 | PDF | Rotate | All pages or a selection, several files at once |
 | PDF | Delete pages | Remove listed pages |
 | PDF | Crop pages | Trim margins by millimetres or auto-detect the printed area |
@@ -68,7 +69,7 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | PDF | Watermark | Diagonal text such as DRAFT or CONFIDENTIAL on every page |
 | PDF | Stamp image or signature | PNG/JPG on all, first, last or chosen pages; position, size, opacity |
 | PDF | Fill PDF form | Text fields, checkboxes, radio groups and dropdowns of a fillable PDF; save filled or flattened |
-| PDF | Compress | Lossless (compact structure, drop metadata, text stays) or re-render pages as JPEG for scans |
+| PDF | Compress | Smart (shrinks the pictures inside, text stays, optional size limit in MB), lossless, or re-render pages as JPEG for scans |
 | PDF | Remove metadata | Shows and strips title, author, software, dates, keywords and XMP |
 | PDF | Images to PDF | One image per page, fit-to-image or A4 / Letter with margins |
 | PDF | PDF to images | PNG or JPEG at 72 / 150 / 300 dpi |
@@ -79,8 +80,9 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | PDF | Repair PDF | Rebuilds damaged or cut-off files, optional web optimisation (linearise) |
 | PDF | Redact PDF | Draw boxes or find a word; marked pages are rebuilt as images so the text is really gone |
 | PDF | Compare PDFs | Text diff of two versions with the pages that changed, saved as a .diff report |
-| Video | Video to GIF | Pick a part of an MP4 / WebM / MOV, frame rate, width, speed and colours; loops |
-| Video | Video to images | One frame every N seconds, N frames spread evenly, or the frame you stop at; JPEG / PNG / WebP |
+| Video & audio | Video to GIF | Pick a part of an MP4 / WebM / MOV, frame rate, width, speed and colours; loops |
+| Video & audio | Video to images | One frame every N seconds, N frames spread evenly, or the frame you stop at; JPEG / PNG / WebP |
+| Video & audio | Video to MP3 | The sound of a video, or an audio file, as MP3 (128 / 192 / 320 kbps) or WAV; trim, mono |
 | Word & Excel | Word to PDF | .docx to PDF (print dialog), HTML, Markdown or text: headings, lists, tables, links, pictures |
 | Word & Excel | Excel to CSV / JSON | .xlsx / .xls / .ods sheets to CSV, TSV, JSON, Markdown, HTML or SQL; every sheet or one; dates as ISO |
 | Word & Excel | CSV / JSON to Excel | Tables to an .xlsx or .ods workbook, one sheet per file, numbers and dates kept as such |
@@ -150,6 +152,7 @@ app/tools/text.js    Diff, checksums, word count & case, JWT, URL, regex, colour
 app/tools/files.js   Rename files, create and extract ZIP
 app/tools/office.js  Word (.docx, mammoth) and Excel / ODS (SheetJS), loaded on first use
 app/tools/video.js   Video to GIF (gifenc) and video to images, through the browser's own decoder
+app/tools/media.js   Read QR codes (BarcodeDetector or jsQR) and video / audio to MP3 or WAV (lamejs)
 app/tools/photo.js   Annotate, ID photo, document scan, transparent background
 app/tools/ocr.js     Image / scanned PDF to text and searchable PDF (Tesseract)
 app/tools/pdf-more.js Protect, unlock, repair (qpdf), redact and compare PDFs
@@ -157,7 +160,7 @@ app/qpdf*.js         qpdf (WebAssembly) in a worker: passwords, permissions, rep
 app/tools/pipeline.js Chains other tools
 app/heic*.js         HEIC/HEIF decoding: libheif (WebAssembly) in a worker, shared by every image tool
 scripts/package.py   Builds Chrome and Firefox zips
-vendor/              pdf-lib, fontkit, pdf.js, marked, JSZip, libheif-js, qpdf, Tesseract (vendor/ocr), mammoth and SheetJS (vendor/office), gifenc, qrcode-generator, Noto Sans subset (vendored, no build step)
+vendor/              pdf-lib, fontkit, pdf.js, marked, JSZip, libheif-js, qpdf, Tesseract (vendor/ocr), mammoth and SheetJS (vendor/office), gifenc, jsQR, lamejs, qrcode-generator, Noto Sans subset (vendored, no build step)
 icons/               Extension icons (generated by scripts/make_icons.py)
 ```
 
@@ -201,5 +204,7 @@ See [PRIVACY.md](PRIVACY.md). Short version: no uploads, no accounts, no analyti
 - [mammoth](https://github.com/mwilliamson/mammoth.js) — BSD-2-Clause (two dead `Function()` calls removed, see `vendor/office/README.md`)
 - [SheetJS Community Edition](https://sheetjs.com) 0.20.3 — Apache 2.0
 - [gifenc](https://github.com/mattdesl/gifenc) — MIT
+- [jsQR](https://github.com/cozmo/jsQR) — Apache 2.0
+- [lamejs](https://github.com/gideonstele/lamejs) (`@breezystack/lamejs`) — LGPL-3.0
 - [qpdf](https://github.com/qpdf/qpdf) 12.2 — Apache 2.0, WebAssembly build from [qpdf-wasm](https://github.com/neslinesli93/qpdf-wasm) (ISC)
 - [tesseract.js](https://github.com/naptha/tesseract.js) and [tesseract.js-core](https://github.com/naptha/tesseract.js-core) — Apache 2.0, with `eng` and `ukr` models from tessdata (Apache 2.0); the CDN defaults are patched out, see `vendor/ocr/README.md`

@@ -8,3 +8,6 @@
   package is stuck at 0.18.5, which has known security issues), Apache-2.0, see `xlsx.LICENSE`. Unmodified.
 
 `../gifenc.esm.js`: [gifenc](https://github.com/mattdesl/gifenc) 1.0.3, MIT. Unmodified.
+
+`../jsqr.js`: [jsQR](https://github.com/cozmo/jsQR) 1.4.0, Apache-2.0. Unmodified.
+`../lamejs.iife.js`: [@breezystack/lamejs](https://github.com/gideonstele/lamejs) 1.2.7 (LAME MP3 encoder in JavaScript), LGPL-3.0. Unmodified.

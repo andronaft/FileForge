@@ -8,10 +8,22 @@ import { toBrowserImage } from "../heic.js";
 const { PDFDocument, PDFDict, PDFName, degrees, PageSizes, StandardFonts, rgb } = PDFLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("../../vendor/pdf.worker.min.mjs", import.meta.url).href;
 
+// One pdf.js worker for the whole app. By default every getDocument() starts its own worker and loads the 1.4 MB
+// worker script again, so twenty thumbnails meant twenty workers; a shared one makes each open a few milliseconds.
+let sharedWorker = null;
+function pdfWorker() {
+  if (!sharedWorker || sharedWorker.destroyed) sharedWorker = new pdfjsLib.PDFWorker({ name: "fileforge-pdf" });
+  return sharedWorker;
+}
+/** Open PDF bytes with pdf.js on the shared worker. */
+function pdfjsOpen(data) {
+  return pdfjsLib.getDocument({ data, isEvalSupported: false, worker: pdfWorker() }).promise;
+}
+
 /** Render pages of a PDF file with pdf.js. Calls onPage(canvas, pageNumber, widthPt, heightPt). */
 async function renderPages(file, scale, indices, onPage, progress) {
   const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  const doc = await pdfjsOpen(data);
   try {
     const pages = indices || Array.from({ length: doc.numPages }, (_, i) => i);
     progress?.start(pages.length);
@@ -40,7 +52,7 @@ async function renderPages(file, scale, indices, onPage, progress) {
 let openDocs = [];
 async function openDoc(file) {
   const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  const doc = await pdfjsOpen(data);
   openDocs.push(doc);
   return doc;
 }
@@ -66,7 +78,7 @@ async function renderThumb(doc, pageIndex, width) {
 /** First page of a PDF as a canvas no larger than `size` px, plus the page count (for the file list). */
 export async function pdfThumbnail(file, size) {
   const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  const doc = await pdfjsOpen(data);
   try {
     const page = await doc.getPage(1);
     const vp1 = page.getViewport({ scale: 1 });
@@ -97,7 +109,7 @@ function pageTiles(doc, grid, indices, width = 104) {
  */
 export async function renderPdfPages(file, container, width) {
   const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+  const doc = await pdfjsOpen(data);
   const dpr = Math.min(2, window.devicePixelRatio || 1);
   let closed = false;
   const paint = (sheet) => {
@@ -488,32 +500,105 @@ const pdfToImagesTool = {
 
 // ---------- compress pdf ----------
 
+// Picture quality steps for the smart mode: the long side in pixels and the JPEG quality. A page is about 8 × 11 in,
+// so 1700 px is roughly 150 dpi for a full-page scan.
+const SHRINK = { high: [2400, 0.82], medium: [1700, 0.7], low: [1200, 0.58], lowest: [850, 0.45] };
+const SHRINK_ORDER = ["high", "medium", "low", "lowest"];
+
+/**
+ * Re-encode the JPEG pictures inside a PDF at a lower resolution and quality, in place. Text, fonts and vector
+ * drawings are not touched. Returns how many pictures got smaller.
+ */
+async function shrinkImages(doc, maxSide, quality, gray, onImage) {
+  const { PDFRawStream, PDFArray, PDFNumber } = PDFLib;
+  const N = (k) => PDFName.of(k);
+  const images = [];
+  for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    if (!(obj instanceof PDFRawStream) || obj.dict.get(N("Subtype")) !== N("Image")) continue;
+    const filter = obj.dict.lookup(N("Filter"));
+    const filters = filter instanceof PDFArray ? filter.asArray().map(String) : filter ? [String(filter)] : [];
+    // Only plain JPEGs: masks, colour-key masks and inverted pictures would come out wrong after re-encoding.
+    if (filters.length !== 1 || filters[0] !== "/DCTDecode") continue;
+    if (obj.dict.has(N("ImageMask")) || obj.dict.has(N("Decode")) || obj.dict.lookup(N("Mask")) instanceof PDFArray) continue;
+    if (obj.contents.length < 20_000) continue; // icons and logos: nothing to win
+    images.push(obj);
+  }
+  let shrunk = 0;
+  for (const [n, obj] of images.entries()) {
+    await onImage?.(n, images.length);
+    let bmp;
+    try { bmp = await createImageBitmap(new Blob([obj.contents], { type: "image/jpeg" })); } catch (_) { continue; }
+    const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
+    const g = c.getContext("2d");
+    g.imageSmoothingQuality = "high";
+    if (gray) g.filter = "grayscale(1)";
+    g.drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close();
+    const bytes = new Uint8Array(await (await toBlob(c, "image/jpeg", quality)).arrayBuffer());
+    if (bytes.length > obj.contents.length * 0.9) continue; // not worth the quality loss
+    obj.contents = bytes;
+    obj.dict.set(N("Width"), PDFNumber.of(c.width));
+    obj.dict.set(N("Height"), PDFNumber.of(c.height));
+    obj.dict.set(N("ColorSpace"), N("DeviceRGB")); // the browser hands back RGB whatever went in (grey, CMYK)
+    obj.dict.set(N("BitsPerComponent"), PDFNumber.of(8));
+    obj.dict.delete(N("DecodeParms"));
+    shrunk++;
+  }
+  return shrunk;
+}
+
 const compressPdfTool = {
   id: "pdf-compress",
   title: "Compress PDF",
-  description: "Lossless mode compacts the file structure and drops metadata while the text stays selectable. Re-render mode turns every page into a JPEG at a lower resolution: great for scans and photo-heavy PDFs, wrong for text documents.",
+  description: "Make a PDF smaller. Smart mode shrinks the pictures inside and keeps the text selectable; it can aim for a size limit, such as 5 MB for an upload form. Re-render mode turns every page into a picture, for scans that will not shrink otherwise.",
+  keywords: ["reduce size", "smaller", "shrink", "optimise", "optimize", "mb", "upload limit", "email", "зменшити", "стиснути", "розмір"],
   accept: "application/pdf,.pdf",
   hint: "One or more PDF files",
   runLabel: "Compress",
   renderOptions(root, files) {
-    const mode = select([["lossless", "Lossless: compact structure, drop metadata"], ["render", "Re-render pages as JPEG (for scans)"]], "lossless");
+    const mode = select([["smart", "Smart: shrink pictures, keep the text"], ["lossless", "Lossless: compact structure, drop metadata"], ["render", "Re-render pages as JPEG (for scans)"]], "smart");
+    const level = select([["high", "High quality"], ["medium", "Balanced"], ["low", "Small file"], ["lowest", "Smallest file"]], "medium");
+    const target = number("", { min: 0.1, step: "0.1", placeholder: "no limit" });
     const dpi = select([["72", "72 dpi (smallest)"], ["100", "100 dpi"], ["150", "150 dpi (balanced)"], ["200", "200 dpi"]], "100");
     const quality = el("input", { type: "range", min: 20, max: 95, value: 60 });
     const qLabel = el("span", { class: "stat", text: "60" });
     quality.addEventListener("input", () => { qLabel.textContent = quality.value; });
     const gray = checkbox("Convert to grayscale", false);
-    const renderRow = el("div", { class: "row", hidden: true }, [field("Resolution", dpi), field("JPEG quality", el("div", { class: "row" }, [quality, qLabel])), gray.label]);
-    mode.addEventListener("change", () => { renderRow.hidden = mode.value !== "render"; });
+    const smartRow = el("div", { class: "row" }, [field("Picture quality", level), field("Fit into (MB)", target, "Optional: quality goes down step by step until the file fits")]);
+    const renderRow = el("div", { class: "row", hidden: true }, [field("Resolution", dpi), field("JPEG quality", el("div", { class: "row" }, [quality, qLabel]))]);
+    const sync = () => { smartRow.hidden = mode.value !== "smart"; renderRow.hidden = mode.value !== "render"; gray.label.hidden = mode.value === "lossless"; };
+    mode.addEventListener("change", sync);
     root.append(
-      el("div", { class: "row" }, [field("Mode", mode)]),
-      renderRow,
+      el("div", { class: "row" }, [field("Mode", mode), gray.label]),
+      smartRow, renderRow,
       el("div", { class: "stat", text: t("{files}, {size} total", { files: plural(files.length, "file"), size: formatBytes(files.reduce((s, f) => s + f.size, 0)) }) }),
     );
-    this.opts = { mode, dpi, quality, gray };
+    this.opts = { mode, level, target, dpi, quality, gray, sync };
+    setTimeout(sync, 0); // after the remembered options are restored
+  },
+  /** Every page as a JPEG at `dpi`: the last resort, text stops being text. */
+  async rasterise(file, dpi, quality, gray, progress) {
+    const doc = await PDFDocument.create();
+    await renderPages(file, dpi / 72, null, async (canvas, _n, wPt, hPt) => {
+      if (gray) {
+        const ctx = canvas.getContext("2d");
+        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) { const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = y; }
+        ctx.putImageData(img, 0, 0);
+      }
+      const jpg = await doc.embedJpg(await (await toBlob(canvas, "image/jpeg", quality)).arrayBuffer());
+      doc.addPage([wPt, hPt]).drawImage(jpg, { x: 0, y: 0, width: wPt, height: hPt });
+    }, progress);
+    return pdfBlob(await doc.save());
   },
   async run(files, _root, progress) {
     const o = this.opts;
     const out = [];
+    const gray = o.gray.input.checked;
+    const saved = (blob, file) => `−${Math.min(99, Math.round((1 - blob.size / file.size) * 100))}% (${t("was {size}", { size: formatBytes(file.size) })})`;
     for (const file of files) {
       if (o.mode.value === "lossless") {
         await progress?.tick(file.name);
@@ -524,20 +609,36 @@ const compressPdfTool = {
         else out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)}), text kept` });
         continue;
       }
-      const doc = await PDFDocument.create();
-      await renderPages(file, Number(o.dpi.value) / 72, null, async (canvas, _n, wPt, hPt) => {
-        if (o.gray.input.checked) {
-          const ctx = canvas.getContext("2d");
-          const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-          const d = img.data;
-          for (let i = 0; i < d.length; i += 4) { const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = y; }
-          ctx.putImageData(img, 0, 0);
+      if (o.mode.value === "smart") {
+        const limit = (Number(o.target.value) || 0) * 1024 * 1024;
+        const start = Math.max(0, SHRINK_ORDER.indexOf(o.level.value));
+        let best = null, pictures = 0, usedLevel = o.level.value;
+        // Each step starts again from the original, so quality is lost only once.
+        for (const lv of SHRINK_ORDER.slice(start)) {
+          await progress?.tick(`${file.name} · ${t(SHRINK_LABEL[lv])}`);
+          const doc = await loadPdf(file);
+          pictures = await shrinkImages(doc, ...SHRINK[lv], gray);
+          stripMetadata(doc);
+          const blob = pdfBlob(await doc.save({ useObjectStreams: true, updateMetadata: false }));
+          if (!best || blob.size < best.size) { best = blob; usedLevel = lv; }
+          if (!limit || blob.size <= limit || !pictures) break;
         }
-        const jpg = await doc.embedJpg(await (await toBlob(canvas, "image/jpeg", Number(o.quality.value) / 100)).arrayBuffer());
-        const page = doc.addPage([wPt, hPt]);
-        page.drawImage(jpg, { x: 0, y: 0, width: wPt, height: hPt });
-      }, progress);
-      const blob = pdfBlob(await doc.save());
+        if (limit && best.size > limit) {
+          // Pictures alone were not enough (a scan saved without JPEG, or mostly vector art): rasterise as a last resort.
+          for (const [dpi, q] of [[110, 0.6], [85, 0.5], [60, 0.4]]) {
+            await progress?.tick(`${file.name} · ${dpi} dpi`);
+            const blob = await this.rasterise(file, dpi, q, gray);
+            if (blob.size < best.size) { best = blob; usedLevel = "render"; }
+            if (blob.size <= limit) break;
+          }
+        }
+        if (best.size >= file.size) { out.push({ name: file.name, blob: file, note: "already compact: kept as is" }); continue; }
+        const how = usedLevel === "render" ? t("pages turned into pictures to fit") : pictures ? t("{n} pictures shrunk, text kept", { n: pictures }) : t("no pictures to shrink, text kept");
+        const fits = limit ? (best.size <= limit ? "" : ` · ${t("still over {limit}", { limit: formatBytes(limit) })}`) : "";
+        out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob: best, note: `${saved(best, file)} · ${how}${fits}` });
+        continue;
+      }
+      const blob = await this.rasterise(file, Number(o.dpi.value), Number(o.quality.value) / 100, gray, progress);
       if (blob.size >= file.size) {
         // Text and vector PDFs are already compact; rasterising them only makes them bigger (and the text unselectable).
         out.push({ name: file.name, blob: file, note: t("kept as is: re-rendering would make it {k}× bigger", { k: (blob.size / file.size).toFixed(1) }) });
@@ -548,6 +649,7 @@ const compressPdfTool = {
     return out;
   },
 };
+const SHRINK_LABEL = { high: "High quality", medium: "Balanced", low: "Small file", lowest: "Smallest file" };
 
 // ---------- delete pages ----------
 
@@ -582,75 +684,108 @@ const deletePagesTool = {
 
 const reorderTool = {
   id: "pdf-reorder",
-  title: "Reorder pages",
-  description: "Drag page thumbnails into a new order, drop the ones you do not need, or reverse the whole document.",
+  title: "Organise pages",
+  description: "Every page of one or several PDFs on one board: drag pages into a new order, rotate or drop single ones, then save it all as one PDF.",
+  keywords: ["reorder", "rearrange", "organize", "organise", "sort pages", "move pages", "rotate page", "delete page", "combine", "arrange", "упорядкувати", "переставити", "порядок сторінок"],
   accept: "application/pdf,.pdf",
-  multiple: false,
-  hint: "One PDF file",
-  runLabel: "Save new order",
+  orderable: true,
+  hint: "One or more PDF files",
+  runLabel: "Save PDF",
   renderOptions(root, files) {
-    const st = { order: [], removed: new Set(), total: 0 };
+    // Pages keep their place, rotation and dropped state when another file is added or one is removed.
+    const kept = (this.state?.pages || []).filter((p) => files.includes(p.file));
+    const st = { pages: kept, files };
     this.state = st;
     const info = el("div", { class: "stat", text: "Loading pages…" });
     const grid = el("div", { class: "pages", role: "list" });
+    const original = () => files.flatMap((f) => st.pages.filter((p) => p.file === f).sort((a, b) => a.i - b.i));
     const bar = el("div", { class: "actions" }, [
-      el("button", { type: "button", text: "Reverse", onclick: () => { st.order.reverse(); paint(); } }),
-      el("button", { type: "button", text: "Reset", onclick: () => { st.order = Array.from({ length: st.total }, (_, i) => i); st.removed.clear(); paint(); } }),
+      el("button", { type: "button", text: "Reverse", onclick: () => { st.pages.reverse(); paint(); } }),
+      el("button", { type: "button", text: "Rotate all ↻", onclick: () => { for (const p of st.pages) p.rot = (p.rot + 90) % 360; paint(); } }),
+      el("button", { type: "button", text: "Reset", onclick: () => { st.pages = original(); for (const p of st.pages) { p.rot = 0; p.removed = false; } paint(); } }),
       info,
     ]);
     root.append(bar, grid);
-    let tiles = new Map();
+    const letter = (f) => String.fromCharCode(65 + (files.indexOf(f) % 26));
     const paint = () => {
-      grid.replaceChildren(...st.order.map((i) => tiles.get(i)));
-      st.order.forEach((i, pos) => { const t = tiles.get(i); t.classList.toggle("removed", st.removed.has(i)); t.querySelector(".page-n").textContent = st.removed.has(i) ? `was ${i + 1}` : `${pos + 1} (was ${i + 1})`; });
-      const kept = st.order.filter((i) => !st.removed.has(i)).length;
-      info.textContent = t("{pages} kept of {total}. Drag to reorder, ✕ to drop a page.", { pages: plural(kept, "page"), total: st.total });
+      grid.replaceChildren(...st.pages.map((p) => p.tile).filter(Boolean));
+      st.pages.forEach((p, pos) => {
+        if (!p.tile) return;
+        p.tile.classList.toggle("removed", !!p.removed);
+        p.tile.style.setProperty("--rot", `${p.rot}deg`);
+        p.tile.classList.toggle("sideways", p.rot % 180 !== 0);
+        const was = files.length > 1 ? `${letter(p.file)}${p.i + 1}` : `was ${p.i + 1}`;
+        p.tile.querySelector(".page-n").textContent = p.removed ? was : files.length > 1 ? `${pos + 1} · ${was}` : `${pos + 1} (${was})`;
+      });
+      const live = st.pages.filter((p) => !p.removed).length;
+      info.textContent = t("{pages} kept of {total}. Drag to reorder, ✕ to drop a page.", { pages: plural(live, "page"), total: st.pages.length });
+    };
+    let from = null;
+    const wire = (p) => {
+      const tile = p.tile;
+      tile.setAttribute("draggable", "true");
+      tile.setAttribute("role", "listitem");
+      tile.title = `${p.file.name}, ${t("page {n}", { n: p.i + 1 })}`;
+      tile.append(
+        el("button", { type: "button", class: "icon mini", text: "✕", title: "Drop this page", onclick: (e) => { e.stopPropagation(); p.removed = !p.removed; paint(); } }),
+        el("button", { type: "button", class: "icon mini rot", text: "↻", title: "Rotate this page", onclick: (e) => { e.stopPropagation(); p.rot = (p.rot + 90) % 360; paint(); } }),
+      );
+      tile.addEventListener("click", () => { if (p.removed) { p.removed = false; paint(); } });
+      tile.addEventListener("dragstart", (e) => { from = p; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", "page"); tile.classList.add("dragging"); });
+      tile.addEventListener("dragend", () => { from = null; tile.classList.remove("dragging"); grid.querySelectorAll(".drop-before, .drop-after").forEach((n) => n.classList.remove("drop-before", "drop-after")); });
+      tile.addEventListener("dragover", (e) => {
+        if (!from || from === p) return;
+        e.preventDefault(); e.dataTransfer.dropEffect = "move";
+        const after = e.clientX > tile.getBoundingClientRect().left + tile.offsetWidth / 2;
+        tile.classList.toggle("drop-after", after); tile.classList.toggle("drop-before", !after);
+      });
+      tile.addEventListener("dragleave", () => tile.classList.remove("drop-before", "drop-after"));
+      tile.addEventListener("drop", (e) => {
+        if (!from || from === p) return;
+        e.preventDefault(); e.stopPropagation();
+        const after = e.clientX > tile.getBoundingClientRect().left + tile.offsetWidth / 2;
+        const moved = from;
+        st.pages.splice(st.pages.indexOf(moved), 1);
+        st.pages.splice(st.pages.indexOf(p) + (after ? 1 : 0), 0, moved);
+        from = null; paint();
+      });
     };
     closeDocs();
-    openDoc(files[0]).then((doc) => {
-      st.total = doc.numPages;
-      st.order = Array.from({ length: st.total }, (_, i) => i);
-      const list = pageTiles(doc, grid, st.order);
-      let from = null;
-      list.forEach((t, i) => {
-        tiles.set(i, t);
-        t.setAttribute("draggable", "true");
-        t.setAttribute("role", "listitem");
-        t.append(el("button", { type: "button", class: "icon mini", text: "✕", title: "Drop this page", onclick: (e) => { e.stopPropagation(); if (st.removed.has(i)) st.removed.delete(i); else st.removed.add(i); paint(); } }));
-        t.addEventListener("click", () => { if (st.removed.has(i)) { st.removed.delete(i); paint(); } });
-        t.addEventListener("dragstart", (e) => { from = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); t.classList.add("dragging"); });
-        t.addEventListener("dragend", () => { t.classList.remove("dragging"); grid.querySelectorAll(".drop-before, .drop-after").forEach((n) => n.classList.remove("drop-before", "drop-after")); });
-        t.addEventListener("dragover", (e) => {
-          if (from === null || from === i) return;
-          e.preventDefault(); e.dataTransfer.dropEffect = "move";
-          const after = e.clientX > t.getBoundingClientRect().left + t.offsetWidth / 2;
-          t.classList.toggle("drop-after", after); t.classList.toggle("drop-before", !after);
-        });
-        t.addEventListener("drop", (e) => {
-          if (from === null) return;
-          e.preventDefault(); e.stopPropagation();
-          const after = e.clientX > t.getBoundingClientRect().left + t.offsetWidth / 2;
-          const fromPos = st.order.indexOf(from), toPosBase = st.order.indexOf(i);
-          st.order.splice(fromPos, 1);
-          let to = toPosBase + (after ? 1 : 0);
-          if (fromPos < to) to--;
-          st.order.splice(to, 0, from);
-          from = null; paint();
-        });
-      });
-      paint();
-    }).catch((err) => { info.textContent = err.message; });
+    this.loading = (async () => {
+      for (const file of files) {
+        const doc = await openDoc(file);
+        const mine = st.pages.filter((p) => p.file === file);
+        if (!mine.length) for (let i = 0; i < doc.numPages; i++) { const p = { file, i, rot: 0, removed: false }; st.pages.push(p); mine.push(p); }
+        const byIndex = [...mine].sort((a, b) => a.i - b.i);
+        const tiles = pageTiles(doc, grid, byIndex.map((p) => p.i));
+        byIndex.forEach((p, k) => { p.tile = tiles[k]; wire(p); });
+        paint();
+      }
+    })();
+    this.loading.catch((err) => { info.textContent = err.message; });
   },
   async run(files) {
+    await this.loading; // pressed before the pages were listed: wait for them
     const st = this.state;
-    const keep = st.order.filter((i) => !st.removed.has(i));
+    const keep = st.pages.filter((p) => !p.removed);
     if (!keep.length) throw new Error("Keep at least one page");
-    const src = await loadPdf(files[0]);
     const doc = await PDFDocument.create();
-    const pages = await doc.copyPages(src, keep);
-    pages.forEach((p) => doc.addPage(p));
-    const unchanged = keep.length === st.total && keep.every((v, k) => v === k);
-    return [{ name: `${baseName(files[0].name)}-reordered.pdf`, blob: pdfBlob(await doc.save()), note: unchanged ? "same order as the original" : `${plural(keep.length, "page")}, new order` }];
+    const copies = new Map(); // page object → its copy in the new document
+    for (const file of files) {
+      const mine = keep.filter((p) => p.file === file);
+      if (!mine.length) continue;
+      const src = await loadPdf(file);
+      const pages = await doc.copyPages(src, mine.map((p) => p.i));
+      mine.forEach((p, k) => copies.set(p, pages[k]));
+    }
+    for (const p of keep) {
+      const page = copies.get(p);
+      if (p.rot) page.setRotation(degrees((page.getRotation().angle + p.rot) % 360));
+      doc.addPage(page);
+    }
+    const unchanged = files.length === 1 && keep.length === st.pages.length && keep.every((p, k) => p.i === k && !p.rot);
+    const name = files.length === 1 ? `${baseName(files[0].name)}-reordered.pdf` : "organised.pdf";
+    return [{ name, blob: pdfBlob(await doc.save()), note: unchanged ? "same order as the original" : `${plural(keep.length, "page")}, new order` }];
   },
 };
 
@@ -829,7 +964,7 @@ const pdfToTextTool = {
     for (const file of files) {
       await progress?.tick(file.name);
       const data = new Uint8Array(await file.arrayBuffer());
-      const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+      const doc = await pdfjsOpen(data);
       const pages = [];
       let chars = 0;
       try {
@@ -1103,7 +1238,7 @@ const extractImagesTool = {
   async run(files, _root, progress) {
     const o = this.opts, file = files[0];
     const data = new Uint8Array(await file.arrayBuffer());
-    const doc = await pdfjsLib.getDocument({ data, isEvalSupported: false }).promise;
+    const doc = await pdfjsOpen(data);
     const out = [], seen = new Set();
     const mime = o.format.value === "png" ? "image/png" : "image/jpeg", ext = o.format.value === "png" ? "png" : "jpg";
     const min = Number(o.minSize.value) || 1;
@@ -1594,4 +1729,4 @@ const signTool = {
 export const pdfTools = [mergeTool, splitTool, signTool, reorderTool, rotatePdfTool, deletePagesTool, cropPdfTool, nupTool, bookletTool, pageNumbersTool, watermarkPdfTool, stampTool, formTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, extractImagesTool, pdfToTextTool];
 
 // Shared with the PDF tools in pdf-more.js (passwords, repair, redact, compare).
-export { pdfjsLib, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, fontFor, toBlob as canvasBlob };
+export { pdfjsLib, pdfjsOpen, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, fontFor, toBlob as canvasBlob };

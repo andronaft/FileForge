@@ -32,7 +32,7 @@ IMAGES
 • Scan document photos: straighten the page, make the paper white and save a PDF
 • Image to text (OCR): read photos, screenshots and scanned PDFs, save .txt or a searchable PDF (English and Ukrainian built in)
 • Transparent background for logos, signatures and product shots on a plain colour
-• Video to GIF and video to images: pick the part, frame rate and size
+• Video to GIF, video to images and video to MP3 (or WAV)
 • Right-click any page → screenshot the visible part or the whole page, straight into the annotation tool
 • Remove metadata: see the camera, date, exposure and GPS location first, then strip EXIF, GPS, XMP and comments without re-encoding
 • Compress to a target size, e.g. "under 200 KB"
@@ -41,6 +41,7 @@ IMAGES
 • Frame, padding & corners: coloured or transparent margin, border, rounded corners, soft shadow
 • Colour palette: the dominant colours as HEX, RGB, HSL, CSS variables, JSON or a swatch image
 • QR code: link, text, Wi-Fi, e-mail, phone, SMS or vCard, as PNG or SVG
+• Read QR codes and barcodes from a screenshot or photo
 • Resize presets for Instagram, Stories, YouTube, Open Graph, LinkedIn, X with cover-crop or fit
 • Collage and contact sheet: many photos in one grid, with a gap, background and file names
 • Split an image into tiles (3 × 3 Instagram grids, banners) or fixed-size pieces
@@ -52,9 +53,9 @@ IMAGES
 PDF
 • Merge PDFs in the order you choose
 • Split by page ranges (click the page thumbnails), one file per page, or into chunks
-• Reorder pages by dragging thumbnails; rotate or delete pages
+• Organise pages: every page of one or several PDFs on one board, drag to reorder, rotate or delete
 • Add page numbers and a diagonal text watermark (DRAFT, CONFIDENTIAL…)
-• Compress: lossless (text stays selectable) or re-render scans at a lower resolution
+• Compress: shrink the pictures inside and keep the text, down to a size limit such as 5 MB
 • Remove PDF metadata: title, author, software, dates, keywords, XMP
 • Images → PDF and PDF → images (PNG or JPG, 72–300 dpi)
 • PDF → text or Markdown

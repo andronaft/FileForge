@@ -64,8 +64,11 @@ function timeline(root, file, onReady) {
     busy = false;
   };
   scrub.addEventListener("input", () => paint(cur()));
+  let resolveReady, rejectReady;
   const api = {
     start, end, info,
+    /** Resolves with the <video> once it can be read; a Run pressed early waits for it instead of failing. */
+    ready: new Promise((res, rej) => { resolveReady = res; rejectReady = rej; }),
     get video() { return v; },
     range() {
       const d = v?.duration || 0;
@@ -82,7 +85,9 @@ function timeline(root, file, onReady) {
     if (!Number(end.value)) end.value = Math.min(v.duration, 5).toFixed(1);
     paint(0);
     onReady(api);
-  }).catch((err) => { info.textContent = err.message; info.className = "stat bad"; });
+    resolveReady(v);
+  }).catch((err) => { info.textContent = err.message; info.className = "stat bad"; rejectReady(err); });
+  api.ready.catch(() => {}); // shown above; run() reports it again if pressed
   return api;
 }
 
@@ -117,8 +122,7 @@ const gifTool = {
     this.opts = { fps, width, speed, colours, loop, tl };
   },
   async run(files, _root, progress) {
-    const o = this.opts, v = o.tl.video;
-    if (!v) throw new Error("Preview is not ready yet");
+    const o = this.opts, v = await o.tl.ready;
     const [a, b] = o.tl.range();
     if (b - a < 0.1) throw new Error("Pick a longer part: the end must be after the start");
     const fps = Number(o.fps.value), speed = Number(o.speed.value);
@@ -168,8 +172,7 @@ const framesTool = {
     this.opts = { mode, count, every, format, tl };
   },
   async run(files, _root, progress) {
-    const o = this.opts, v = o.tl.video;
-    if (!v) throw new Error("Preview is not ready yet");
+    const o = this.opts, v = await o.tl.ready;
     const [a, b] = o.tl.range();
     let times;
     if (o.mode.value === "one") times = [(Number(o.tl.video.currentTime) || 0)];
