@@ -1,7 +1,7 @@
 // Office documents: Word (.docx) to PDF / HTML / Markdown / text with mammoth, and Excel / ODS to CSV / JSON and back
 // with SheetJS. Both libraries are loaded only when one of these tools is opened.
-import { el, baseName, field, select, checkbox, download, formatBytes, plural, toast, t } from "../util.js";
-import { parseTable, convertTable } from "./data.js";
+import { el, baseName, field, select, checkbox, download, formatBytes, plural, toast, readText, readTextInfo, encodingNote, t } from "../util.js";
+import { parseTable, convertTable, maxCols } from "./data.js";
 
 const VENDOR = new URL("../../vendor/office/", import.meta.url).href;
 const loading = {};
@@ -16,6 +16,15 @@ function loadScript(name, global) {
   return loading[name];
 }
 
+/** Links a document may carry into an exported file: web, mail, phone, relative and in-page ones, never javascript: or data:. */
+export function safeHref(href) {
+  const scheme = String(href || "").replace(/[\u0000- ]/g, "").match(/^([a-z][a-z0-9+.-]*):/i)?.[1].toLowerCase();
+  return !scheme || ["http", "https", "mailto", "tel", "ftp"].includes(scheme);
+}
+
+/** `inner` wrapped in ** or *, its edge spaces left outside: Word's "Total: " in bold would give "**Total: **12", which is not bold. */
+export const emphasis = (inner, mark) => { const m = inner.match(/^(\s*)([\s\S]*?)(\s*)$/); return m[2] ? m[1] + mark + m[2] + mark + m[3] : inner; };
+
 /** Markdown from mammoth's HTML: headings, paragraphs, bold / italic, links, lists (nested), tables, quotes. */
 function htmlToMarkdown(html) {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
@@ -24,14 +33,21 @@ function htmlToMarkdown(html) {
     if (n.nodeType === 3) return esc(n.textContent.replace(/\s+/g, " "));
     if (n.nodeType !== 1) return "";
     const tag = n.tagName.toLowerCase(), inner = inline(n);
-    if (tag === "strong" || tag === "b") return inner.trim() ? `**${inner}**` : inner;
-    if (tag === "em" || tag === "i") return inner.trim() ? `*${inner}*` : inner;
-    if (tag === "a") return n.getAttribute("href") && !n.getAttribute("href").startsWith("#") ? `[${inner}](${n.getAttribute("href")})` : inner;
+    if (tag === "strong" || tag === "b") return emphasis(inner, "**");
+    if (tag === "em" || tag === "i") return emphasis(inner, "*");
+    if (tag === "a") { const href = n.getAttribute("href"); return href && !href.startsWith("#") && safeHref(href) ? `[${inner}](${href})` : inner; }
     if (tag === "br") return "  \n";
     if (tag === "img") return `*[${t("picture")}${n.alt ? `: ${n.alt}` : ""}]*`;
     if (tag === "sup") return `^${inner}^`;
     return inner;
   }).join("");
+  // A table cell is one line of Markdown: its paragraphs and list items are joined with <br>, not run together.
+  const BLOCK = /^(P|DIV|UL|OL|H[1-6]|BLOCKQUOTE|TABLE|PRE)$/;
+  const cell = (c) => {
+    const parts = ![...c.children].some((x) => BLOCK.test(x.tagName)) ? [inline(c)]
+      : [...c.childNodes].flatMap((n) => (n.nodeType === 3 ? [esc(n.textContent.replace(/\s+/g, " "))] : n.nodeType !== 1 ? [] : /^(UL|OL)$/.test(n.tagName) ? [...n.children].map((li) => `• ${inline(li).trim()}`) : [inline(n)]));
+    return parts.map((x) => x.trim()).filter(Boolean).join("<br>").replace(/ *\n/g, "<br>").replace(/\|/g, "\\|");
+  };
   const blocks = (node, depth = 0) => {
     const out = [];
     for (const n of node.children) {
@@ -48,9 +64,9 @@ function htmlToMarkdown(html) {
           return [bullet, ...nested.map((x) => blocks({ children: [x] }, depth + 1).join("\n"))].join("\n");
         }).join("\n"));
       } else if (tag === "table") {
-        const rows = [...n.querySelectorAll("tr")].map((tr) => [...tr.children].map((c) => inline(c).trim().replace(/\|/g, "\\|").replace(/\n/g, " ")));
+        const rows = [...n.querySelectorAll("tr")].filter((tr) => tr.closest("table") === n).map((tr) => [...tr.children].map(cell));
         if (!rows.length) continue;
-        const cols = Math.max(...rows.map((r) => r.length));
+        const cols = maxCols(rows);
         const pad = (r) => Array.from({ length: cols }, (_, i) => r[i] ?? "");
         out.push([`| ${pad(rows[0]).join(" | ")} |`, `| ${Array(cols).fill("---").join(" | ")} |`, ...rows.slice(1).map((r) => `| ${pad(r).join(" | ")} |`)].join("\n"));
       } else if (tag === "blockquote") out.push(blocks(n, depth).join("\n\n").split("\n").map((l) => `> ${l}`).join("\n"));
@@ -148,12 +164,16 @@ const wordTool = {
       const mammoth = await loadScript("mammoth.browser.min.js", "mammoth");
       const arrayBuffer = await file.arrayBuffer();
       const res = await mammoth.convertToHtml({ arrayBuffer }, { styleMap: STYLE_MAP, includeDefaultStyleMap: true });
+      const doc = new DOMParser().parseFromString(res.value, "text/html");
+      // mammoth copies link targets as they are; a javascript: or data: link must not ride into the saved .html
+      const bad = [...doc.querySelectorAll("a[href]")].filter((a) => !safeHref(a.getAttribute("href")));
+      for (const a of bad) a.removeAttribute("href");
+      const html = bad.length ? doc.body.innerHTML : res.value;
       const st = {
-        html: res.value,
-        markdown: async () => htmlToMarkdown(res.value),
+        html,
+        markdown: async () => htmlToMarkdown(html),
         text: async () => (await mammoth.extractRawText({ arrayBuffer })).value,
       };
-      const doc = new DOMParser().parseFromString(res.value, "text/html");
       const words = (doc.body.textContent.match(/\S+/g) || []).length;
       const unsupported = new Set(res.messages.filter((m) => m.type === "warning").map((m) => m.message.replace(/: .*$/, "")));
       info.textContent = [plural(words, "word"), plural(doc.querySelectorAll("table").length, "table"), plural(doc.querySelectorAll("img").length, "picture")].join(" · ")
@@ -180,10 +200,26 @@ const wordTool = {
 
 const SHEET_FORMATS = { csv: ["CSV", "csv", "text/csv"], tsv: ["TSV (tab-separated)", "tsv", "text/tab-separated-values"], json: ["JSON (array of objects)", "json", "application/json"], jsonrows: ["JSON (array of rows)", "json", "application/json"], markdown: ["Markdown table", "md", "text/markdown"], html: ["HTML table", "html", "text/html"], sql: ["SQL INSERT statements", "sql", "text/plain"] };
 
-/** A sheet as rows of strings, using the cell text Excel shows (dates and numbers formatted). */
+/**
+ * Gives every date cell of a workbook (read with cellNF and without cellDates) unambiguous ISO text. Left to SheetJS
+ * a plain date comes out US-style with a two-digit year ("3/5/24" for 5 March 2024) and a date-time in a custom
+ * format loses its time; formatting the serial number also keeps the computer's timezone out of it. Durations
+ * ([h]:mm) and times of day without a date keep the text Excel shows.
+ */
+export function isoDates(XLSX, wb) {
+  const date1904 = !!wb.Workbook?.WBProps?.date1904;
+  for (const name of wb.SheetNames) for (const row of wb.Sheets[name]?.["!data"] || []) for (const c of row || []) {
+    if (!c || c.t !== "n" || typeof c.z !== "string" || !XLSX.SSF.is_date(c.z)) continue;
+    const fmt = c.z.replace(/"[^"]*"|\\.|\[[^\]]*\]/g, ""); // the tokens only: no literals, colours, locales or [h]
+    if (!/[yd]/i.test(fmt)) continue;
+    try { c.w = XLSX.SSF.format(/[hs]/i.test(fmt) ? `yyyy-mm-dd hh:mm${/s/i.test(fmt) ? ":ss" : ""}` : "yyyy-mm-dd", c.v, { date1904 }); } catch (_) { /* keep SheetJS's text */ }
+  }
+  return wb;
+}
+
+/** A sheet as rows of strings, using the cell text Excel shows (numbers formatted; dates as ISO, see isoDates). */
 function sheetRows(XLSX, ws) {
-  // dateNF replaces Excel's locale-dependent "short date" (m/d/yy in SheetJS) with an unambiguous ISO date
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "", blankrows: false, dateNF: "yyyy-mm-dd" });
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: "", blankrows: false });
   // drop empty trailing columns
   let width = 0;
   for (const r of rows) for (let i = r.length - 1; i >= width; i--) if (String(r[i]).trim()) { width = i + 1; break; }
@@ -209,7 +245,7 @@ const excelReadTool = {
     this.ready = (async () => {
       const XLSX = await loadScript("xlsx.full.min.js", "XLSX");
       const books = [];
-      for (const f of files) books.push({ file: f, wb: XLSX.read(await f.arrayBuffer(), { type: "array", cellDates: true, dense: true }) });
+      for (const f of files) books.push({ file: f, wb: isoDates(XLSX, XLSX.read(await f.arrayBuffer(), { type: "array", dense: true, cellNF: true })) });
       return { XLSX, books };
     })();
     this.ready.then(({ XLSX, books }) => {
@@ -235,7 +271,7 @@ const excelReadTool = {
         await progress?.tick(`${file.name} · ${name}`);
         const rows = sheetRows(XLSX, wb.Sheets[name]);
         if (!rows.length) continue;
-        const text = convertTable(rows, o.to.value, o.header.input.checked, name.replace(/\W+/g, "_") || "data");
+        const text = convertTable(rows, o.to.value, o.header.input.checked, name.replace(/[^\p{L}\p{N}_]+/gu, "_") || "data"); // \W would turn "Аркуш1" into "_1"
         const stem = wb.SheetNames.length > 1 ? `${baseName(file.name)}-${name.replace(/[\\/:*?"<>|]+/g, "-")}` : baseName(file.name);
         out.push({ name: `${stem}.${ext}`, blob: new Blob([text], { type: mime }), note: `${plural(rows.length, "row")} × ${rows[0].length}` });
       }
@@ -246,6 +282,22 @@ const excelReadTool = {
 };
 
 // ---------- tables → Excel ----------
+
+/**
+ * "2024-03-05" or "2024-03-05 10:30[:00]" as an Excel date cell, or null. The serial number comes from the calendar
+ * date itself: through a JavaScript Date the day depended on the computer's timezone (a day early west of
+ * Greenwich, a hidden 02:00 in Kyiv). A date-time gets a format that shows its time.
+ */
+export function dateCell(s) {
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+  if (!m) return null;
+  const [y, mo, d, h, mi, sec] = m.slice(1).map((x) => Number(x || 0));
+  const utc = Date.UTC(y, mo - 1, d), back = new Date(utc);
+  if (y < 1900 || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d || h > 23 || mi > 59 || sec > 59) return null; // 2024-02-31 stays text
+  let serial = utc / 86400000 + 25569;
+  if (serial < 61) serial -= 1; // Excel counts a 29 February 1900 that never existed
+  return { t: "n", v: serial + (h * 3600 + mi * 60 + sec) / 86400, z: m[4] === undefined ? "yyyy-mm-dd" : m[6] === undefined ? "yyyy-mm-dd hh:mm" : "yyyy-mm-dd hh:mm:ss" };
+}
 
 const excelWriteTool = {
   id: "excel-write",
@@ -265,7 +317,10 @@ const excelWriteTool = {
     this.opts = { format, name, types };
     (async () => {
       const parts = [];
-      for (const f of files) { const { rows, from } = parseTable(await f.text()); parts.push(`${f.name}: ${from.toUpperCase() || "?"}, ${plural(rows.length, "row")}`); }
+      for (const f of files) {
+        const { text, encoding } = await readTextInfo(f), { rows, from } = parseTable(text), enc = encodingNote(encoding);
+        parts.push(`${f.name}: ${from.toUpperCase() || "?"}, ${plural(rows.length, "row")}${enc ? `, ${enc}` : ""}`);
+      }
       info.replaceChildren(...parts.map((p) => el("div", { text: p })));
     })().catch((err) => { info.textContent = err.message; });
   },
@@ -276,17 +331,20 @@ const excelWriteTool = {
       if (!o.types.input.checked) return v;
       const s = v.trim();
       if (/^-?\d+(\.\d+)?$/.test(s) && !/^-?0\d/.test(s) && s.length < 16) return Number(s);
-      if (/^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?$/.test(s)) { const d = new Date(s.replace(" ", "T")); if (!isNaN(d)) return d; }
-      return v;
+      const date = dateCell(s);
+      if (date && o.format.value === "ods") date.z = date.z.replace(/[- ]/g, "\\$&"); // the ODS writer drops a bare "-" or space from a format
+      return date || v;
     };
     let total = 0;
     for (const f of files) {
-      const { rows } = parseTable(await f.text());
+      const { rows } = parseTable(await readText(f));
       if (!rows.length) continue;
-      const ws = XLSX.utils.aoa_to_sheet(rows.map((r, i) => (i === 0 ? r : r.map(typed))), { cellDates: true, dateNF: "yyyy-mm-dd" });
-      ws["!cols"] = Array.from({ length: Math.max(...rows.map((r) => r.length)) }, (_, i) => ({ wch: Math.min(60, Math.max(6, ...rows.slice(0, 200).map((r) => String(r[i] ?? "").length))) }));
-      let sheet = baseName(f.name).replace(/[\\/?*[\]:]/g, " ").slice(0, 31) || "Sheet";
-      for (let k = 2; used.has(sheet.toLowerCase()); k++) sheet = `${sheet.slice(0, 28)} (${k})`;
+      const ws = XLSX.utils.aoa_to_sheet(rows.map((r, i) => (i === 0 ? r : r.map(typed))));
+      ws["!cols"] = Array.from({ length: maxCols(rows) }, (_, i) => ({ wch: Math.min(60, Math.max(6, ...rows.slice(0, 200).map((r) => String(r[i] ?? "").length))) }));
+      // a sheet name is at most 31 characters, the " (2)" of a repeated one included, and may not start or end with '
+      const base = baseName(f.name).replace(/[\\/?*[\]:]/g, " ").replace(/^'+|'+$/g, "").slice(0, 31) || "Sheet";
+      let sheet = base;
+      for (let k = 2; used.has(sheet.toLowerCase()); k++) { const tail = ` (${k})`; sheet = base.slice(0, 31 - tail.length) + tail; }
       used.add(sheet.toLowerCase());
       XLSX.utils.book_append_sheet(wb, ws, sheet);
       total += rows.length;

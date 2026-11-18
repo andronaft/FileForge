@@ -177,9 +177,13 @@ const ocrTool = {
           out.pdf ??= await PDFDocument.create();
           if (job.pdf) {
             // keep the original page as it is and lay the text over it
-            if (!sources.has(job.file)) sources.set(job.file, await loadPdf(job.file));
-            const [copy] = await out.pdf.copyPages(sources.get(job.file), [job.n - 1]);
-            const page = out.pdf.addPage(copy);
+            // all pages of a file are copied in one go, so fonts and pictures they share are stored once
+            if (!sources.has(job.file)) {
+              const wanted = jobs.filter((j) => j.file === job.file).map((j) => j.n - 1);
+              const copied = await out.pdf.copyPages(await loadPdf(job.file), wanted);
+              sources.set(job.file, new Map(wanted.map((n, k) => [n, copied[k]])));
+            }
+            const page = out.pdf.addPage(sources.get(job.file).get(job.n - 1));
             await textLayer(out.pdf, page, words, canvas.width, viewport.width, (x, y) => viewport.convertToPdfPoint(x, y), viewport.rotation || 0, out.fonts);
           } else {
             const k = 842 / Math.max(canvas.width, canvas.height); // long side = A4's long side

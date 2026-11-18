@@ -8,7 +8,7 @@
 [![CI](https://github.com/andronaft/FileForge/actions/workflows/ci.yml/badge.svg)](https://github.com/andronaft/FileForge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 71 tools, everything runs on your device. Nothing is uploaded anywhere.
+Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 75 tools, everything runs on your device. Nothing is uploaded anywhere.
 
 ## Install
 
@@ -28,13 +28,13 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 
 ## Tools
 
-71 tools, all running in the page. Drop a folder or a ZIP into any tool and the files inside go straight in. Open the app and press **⌘K / Ctrl+K** to search them.
+75 tools, all running in the page. Drop a folder or a ZIP into any tool and the files inside go straight in. Open the app and press **⌘K / Ctrl+K** to search them.
 
 | Group | Tool | What it does |
 | --- | --- | --- |
 | Images | Crop | Drag a rectangle or type exact pixels, aspect-ratio presets |
 | Images | Annotate screenshot | Arrows, boxes, circles, highlighter, pen, text and numbered steps; undo/redo; paste a screenshot with Ctrl+V |
-| Images | ID & passport photo | 35 × 45, 3 × 4, 2 × 2 in and more with head-position guides; one photo, a 10 × 15 print sheet or an A4 PDF |
+| Images | ID & passport photo | 35 × 45, 3 × 4, 2 × 2 in and more with head-position guides; one photo, a 10 × 15 print sheet, an A4 PDF, or exact pixels with a size limit in KB for online applications |
 | Images | Scan document photo | Finds the sheet's corners, straightens the perspective, whitens the paper (colour, grey or B&W) and saves all pages as one PDF |
 | Images | Image to text (OCR) | Reads photos, screenshots and scanned PDFs (English and Ukrainian built in, other languages from a .traineddata file); .txt or a searchable PDF that keeps the original pages |
 | Images | Transparent background | Makes a plain single-colour background transparent (logos, signatures, product shots), edge-connected or everywhere, smooth edges, trim |
@@ -51,13 +51,16 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Images | Compare images | Pixel diff of two screenshots with tolerance, highlighted changes, a percentage and a side-by-side export |
 | Images | Watermark | Text in a corner, centred, or tiled diagonally, with live preview |
 | Images | Redact | Black out, pixelate or blur parts of a screenshot or photo, as many boxes as you need |
-| Images | Remove metadata | Shows camera, date, exposure and GPS (with a map link), then strips EXIF, GPS, XMP, IPTC and comments without re-encoding |
+| Images | Remove metadata | Shows camera, date, exposure and GPS (with a map link), then strips EXIF, GPS, XMP, IPTC, comments and embedded previews without re-encoding; the photo stays upright |
 | Images | Colour palette | Dominant colours as HEX / RGB / HSL, CSS variables, JSON and a swatch PNG |
 | Images | Favicon & app icons | favicon.ico + PNG set + Apple touch + PWA icons + HTML snippet + webmanifest |
 | Images | QR code | Link, text, Wi-Fi, e-mail, phone, SMS or vCard as PNG or SVG, any colours |
+| Images | Images to GIF | A set of pictures as an animated GIF: seconds per picture, width, loop, forward-and-back |
 | Images | Read QR code | Decodes QR codes and barcodes in screenshots and photos: link (shown, not opened), Wi-Fi password, contact, text |
 | PDF | Merge | Combine PDFs in the order you choose |
-| PDF | Split | Extract page ranges (click page thumbnails or type them), every page separately, or chunks of N pages |
+| PDF | Document pack | Photos, scans (HEIC too) and PDFs in any mix as one PDF that fits an upload form: size limit in MB, file name in Latin letters |
+| PDF | Safe copy of a document | Writes who a passport or ID copy is for across the whole page, flattens the pages into pictures, drops metadata |
+| PDF | Split | Extract page ranges (click page thumbnails or type them), every page separately, chunks of N pages, or parts under a size limit |
 | PDF | Sign & fill | Draw, type or upload a signature and place it with text, the date, ticks and crosses anywhere on any PDF, rotated pages included |
 | PDF | Organise pages | Every page of one or several PDFs on one board: drag to reorder, rotate or drop single pages, save one PDF |
 | PDF | Rotate | All pages or a selection, several files at once |
@@ -99,12 +102,13 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Text & data | URL encode, decode & parse | Percent-encoding both ways, URL parts and query parameters in a table |
 | Text & data | Regex tester | Live highlighted matches, groups, replacement preview |
 | Text & data | Colour converter & contrast | HEX / RGB / HSL / HSV, tints, shades, complement, CSS variables, WCAG contrast with AA / AAA verdicts |
+| Files | Privacy check | What a file gives away before you send it: photo location and hidden thumbnail, PDF author and history, Word comments and tracked changes, hidden Excel sheets; one button makes cleaned copies |
 | Files | Rename files | Batch rename with {name} {n} {date} {time} {ext} patterns, find & replace (regex), case, Latin-only transliteration |
 | Files | Create ZIP | Pack files or a whole folder into one archive, three compression levels |
 | Files | Extract ZIP | Lists what is inside, extracts everything or names that match, results go straight into other tools |
 | Batch | Pipeline | Chain tools (resize → adjust → watermark → compress, merge → page numbers → compress) and run them on every file |
 
-Results can be previewed in place, handed straight to another tool ("Continue with"), downloaded as a single ZIP or copied to the clipboard. The file list shows thumbnails and can be reordered by dragging or sorted by name or date. Images can be pasted from the clipboard, dropped anywhere on the page, or opened from the OS "Open with" menu when the web version is installed as an app. Batches show a progress bar with a Cancel button, Ctrl/⌘+Enter runs the tool, and every tool remembers the options you used last time.
+Results can be previewed in place, handed straight to another tool ("Continue in"), downloaded as a single ZIP or copied to the clipboard. The file list shows thumbnails and can be reordered by dragging or sorted by name or date. Images can be pasted from the clipboard, dropped anywhere on the page, or opened from the OS "Open with" menu when the web version is installed as an app. Batches show a progress bar with a Cancel button, Ctrl/⌘+Enter runs the tool, and every tool remembers the options you used last time.
 
 The interface is in English and Ukrainian (picked from the browser language, switchable in Settings), with a light and a dark theme, a home page with every tool, a command palette (⌘K), keyboard shortcuts (`?`), favourite tools pinned to the home page and sidebar, and a compact layout for the browser's side panel.
 
@@ -154,6 +158,10 @@ app/tools/office.js  Word (.docx, mammoth) and Excel / ODS (SheetJS), loaded on 
 app/tools/video.js   Video to GIF (gifenc) and video to images, through the browser's own decoder
 app/tools/media.js   Read QR codes (BarcodeDetector or jsQR) and video / audio to MP3 or WAV (lamejs)
 app/tools/photo.js   Annotate, ID photo, document scan, transparent background
+app/tools/pack.js    Document pack (photos + PDFs under a size limit) and safe copy of a document
+app/tools/gif.js     Images to GIF (gifenc)
+app/tools/privacy.js Privacy check: what images, PDFs and Office files give away, and cleaned copies
+app/insights.js      A look inside dropped files: the facts behind the suggestions on the home page
 app/tools/ocr.js     Image / scanned PDF to text and searchable PDF (Tesseract)
 app/tools/pdf-more.js Protect, unlock, repair (qpdf), redact and compare PDFs
 app/qpdf*.js         qpdf (WebAssembly) in a worker: passwords, permissions, repair
@@ -169,7 +177,8 @@ No build step, no framework, no dependencies to install.
 ## Limits
 
 - Everything runs in browser memory. Very large files (hundreds of MB) may be slow or fail.
-- "Compress PDF" rasterises pages, so text stops being selectable. Use it for scans and photo PDFs.
+- "Compress PDF" keeps text as text in Smart mode and shrinks only JPEG pictures in RGB or grey; CMYK pictures are left as they are. With a size limit it turns pages into pictures only when nothing else fits.
+- "Privacy check" reports what it knows how to find; it does not certify a file as clean. Comments, tracked changes and hidden sheets in Office files are reported, not removed.
 - Word to PDF keeps the content and structure (headings, lists, tables, pictures, links), not the exact page layout, columns or fonts; old binary `.doc` files are not read. PDF to Word is not implemented.
 - Video tools use the browser's own decoder: MP4 (H.264) and WebM work everywhere, iPhone HEVC `.mov` only where the browser plays it. A GIF is limited to 600 frames.
 - OCR ships with English and Ukrainian. Other languages need a `.traineddata` file (from Tesseract's tessdata) added in the tool; handwriting is not recognised.

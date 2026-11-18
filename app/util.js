@@ -89,6 +89,45 @@ export function readAsText(file) {
   });
 }
 
+/**
+ * Text from bytes whatever the encoding: UTF-8 (with or without a BOM), UTF-16 with a BOM, otherwise a one-byte
+ * code page. CSV and TXT exports from Excel, 1C and banks on a Cyrillic Windows are Windows-1251; read as UTF-8
+ * every letter of them turns into "�". Returns { text, encoding }.
+ */
+export function decodeText(bytes) {
+  const dec = (label, opts) => new TextDecoder(label, opts).decode(bytes);
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return { text: dec("utf-16le"), encoding: "UTF-16" };
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return { text: dec("utf-16be"), encoding: "UTF-16" };
+  try { return { text: dec("utf-8", { fatal: true }), encoding: "UTF-8" }; } catch (_) { /* not UTF-8 */ }
+  // A UTF-8 file with a few damaged bytes is still UTF-8: its valid multi-byte letters far outnumber the bad bytes.
+  const loose = dec("utf-8");
+  let bad = 0, multi = 0;
+  for (let i = 0; i < loose.length; i++) { const c = loose.charCodeAt(i); if (c === 0xfffd) bad++; else if (c > 0x7f) multi++; }
+  if (multi > bad * 4) return { text: loose, encoding: "UTF-8" };
+  // Cyrillic words are runs of high bytes; in Western European text an accented letter sits alone next to ASCII letters.
+  const letter = (b) => (b > 0x40 && b < 0x5b) || (b > 0x60 && b < 0x7b);
+  let high = 0, western = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] < 0x80) continue;
+    high++;
+    if (!(bytes[i - 1] > 0x7f) && !(bytes[i + 1] > 0x7f) && (letter(bytes[i - 1]) || letter(bytes[i + 1]))) western++;
+  }
+  const cyrillic = western * 2 < high;
+  return { text: dec(cyrillic ? "windows-1251" : "windows-1252"), encoding: cyrillic ? "Windows-1251" : "Windows-1252" };
+}
+
+export async function readTextInfo(file) {
+  return decodeText(new Uint8Array(await file.arrayBuffer()));
+}
+
+/** The text of a file, decoded by `decodeText`. Use this instead of file.text() for anything a user drops in. */
+export async function readText(file) {
+  return (await readTextInfo(file)).text;
+}
+
+/** "encoding: Windows-1251" for a status line; nothing for plain UTF-8, which needs no mention. */
+export const encodingNote = (encoding) => (encoding && encoding !== "UTF-8" ? t("encoding: {encoding}", { encoding }) : "");
+
 /** Parse "1-3, 5, 8-10" into sorted unique 0-based indices within [0, total). */
 export function parseRanges(text, total) {
   const out = new Set();

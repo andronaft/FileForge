@@ -1,5 +1,5 @@
 // Text and developer tools: diff, checksums, word count & case, JWT, URL, regex.
-import { el, baseName, field, select, checkbox, readAsText, formatBytes, plural, toast, t } from "../util.js";
+import { el, baseName, field, select, checkbox, readText, readTextInfo, encodingNote, formatBytes, plural, toast, t } from "../util.js";
 import { copyButton } from "./data.js";
 
 const mono = (attrs = {}) => el("textarea", { spellcheck: "false", ...attrs });
@@ -8,36 +8,57 @@ const debounce = (fn, ms = 150) => { let timer; return () => { clearTimeout(time
 
 // ---------- diff ----------
 
-/** Line diff (Myers' O(ND) algorithm). Returns [{type: "ctx"|"add"|"del", a, b, text}]. */
-export function diffLines(a, b) {
-  const n = a.length, m = b.length, max = n + m;
-  const v = new Map([[1, 0]]);
-  const trace = [];
-  outer: for (let d = 0; d <= max; d++) {
-    trace.push(new Map(v));
+/**
+ * Line diff (Myers' O(ND) algorithm). Returns [{type: "ctx"|"add"|"del", a, b, text}].
+ * Equal lines at both ends are set aside first, and each step keeps only its own diagonals in a typed array: a copy
+ * of a Map per step took 1.8 GB for two unrelated 4,000-line texts. Past `maxD` differing lines the middle is no
+ * longer matched line by line: it comes back as one removed and one added block and the result has `coarse` set.
+ */
+export function diffLines(a, b, maxD = 4000) {
+  let pre = 0, suf = 0;
+  const short = Math.min(a.length, b.length);
+  while (pre < short && a[pre] === b[pre]) pre++;
+  while (suf < short - pre && a[a.length - 1 - suf] === b[b.length - 1 - suf]) suf++;
+  const n = a.length - pre - suf, m = b.length - pre - suf;
+  const lim = Math.min(n + m, maxD), off = lim + 1;
+  const v = new Int32Array(2 * lim + 3), trace = [];
+  let found = false;
+  outer: for (let d = 0; d <= lim; d++) {
+    trace.push(v.slice(off - d - 1, off + d + 2)); // diagonals -d-1 … d+1 as they stood before this step
     for (let k = -d; k <= d; k += 2) {
-      let x = (k === -d || (k !== d && (v.get(k - 1) ?? -1) < (v.get(k + 1) ?? -1))) ? (v.get(k + 1) ?? 0) : (v.get(k - 1) ?? 0) + 1;
+      let x = (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1])) ? v[off + k + 1] : v[off + k - 1] + 1;
       let y = x - k;
-      while (x < n && y < m && a[x] === b[y]) { x++; y++; }
-      v.set(k, x);
-      if (x >= n && y >= m) break outer;
+      while (x < n && y < m && a[pre + x] === b[pre + y]) { x++; y++; }
+      v[off + k] = x;
+      if (x >= n && y >= m) { found = true; break outer; }
     }
   }
-  // Walk the trace back to produce the edit script.
+  const mid = [];
+  if (found) {
+    // Walk the trace back to produce the edit script.
+    let x = n, y = m;
+    for (let d = trace.length - 1; d >= 0; d--) {
+      const vd = trace[d], at = (k) => vd[k + d + 1];
+      const k = x - y;
+      const prevK = (k === -d || (k !== d && at(k - 1) < at(k + 1))) ? k + 1 : k - 1;
+      const prevX = at(prevK), prevY = prevX - prevK;
+      while (x > prevX && y > prevY) { mid.push({ type: "ctx", a: pre + x - 1, b: pre + y - 1, text: a[pre + x - 1] }); x--; y--; }
+      if (d > 0) {
+        if (x === prevX) { mid.push({ type: "add", b: pre + y - 1, text: b[pre + y - 1] }); y--; }
+        else { mid.push({ type: "del", a: pre + x - 1, text: a[pre + x - 1] }); x--; }
+      }
+    }
+    mid.reverse();
+  } else {
+    for (let i = 0; i < n; i++) mid.push({ type: "del", a: pre + i, text: a[pre + i] });
+    for (let j = 0; j < m; j++) mid.push({ type: "add", b: pre + j, text: b[pre + j] });
+  }
   const ops = [];
-  let x = n, y = m;
-  for (let d = trace.length - 1; d >= 0; d--) {
-    const vd = trace[d];
-    const k = x - y;
-    const prevK = (k === -d || (k !== d && (vd.get(k - 1) ?? -1) < (vd.get(k + 1) ?? -1))) ? k + 1 : k - 1;
-    const prevX = vd.get(prevK) ?? 0, prevY = prevX - prevK;
-    while (x > prevX && y > prevY) { ops.push({ type: "ctx", a: x - 1, b: y - 1, text: a[x - 1] }); x--; y--; }
-    if (d > 0) {
-      if (x === prevX) { ops.push({ type: "add", b: y - 1, text: b[y - 1] }); y--; }
-      else { ops.push({ type: "del", a: x - 1, text: a[x - 1] }); x--; }
-    }
-  }
-  return ops.reverse();
+  for (let i = 0; i < pre; i++) ops.push({ type: "ctx", a: i, b: i, text: a[i] });
+  for (const o of mid) ops.push(o);
+  for (let i = 0; i < suf; i++) ops.push({ type: "ctx", a: pre + n + i, b: pre + m + i, text: a[pre + n + i] });
+  if (!found) ops.coarse = true;
+  return ops;
 }
 
 export function unified(ops, nameA, nameB) {
@@ -80,14 +101,18 @@ const diffTool = {
       summary, out,
     );
     const norm = (s) => { let x = s; if (ignoreWs.input.checked) x = x.replace(/\s+/g, " ").trim(); if (ignoreCase.input.checked) x = x.toLowerCase(); return x; };
+    let enc = ""; // which dropped file was not UTF-8, for the summary line
     const update = () => {
       if (!a.value && !b.value) { out.hidden = true; summary.textContent = t("Paste two texts to compare them"); this.ops = null; return; }
       const la = a.value.split("\n"), lb = b.value.split("\n");
-      if (la.length + lb.length > 20000) { summary.textContent = t("Too long to compare live; keep each text under 10,000 lines"); return; }
-      const ops = diffLines(la.map(norm), lb.map(norm)).map((o) => ({ ...o, text: o.type === "add" ? lb[o.b] : la[o.a] }));
+      // no diff on screen: nothing to save either, or "Save .diff" would hand out the previous comparison
+      if (la.length + lb.length > 20000) { summary.textContent = t("Too long to compare live; keep each text under 10,000 lines"); summary.className = "stat"; out.hidden = true; this.ops = null; return; }
+      const raw = diffLines(la.map(norm), lb.map(norm));
+      const ops = raw.map((o) => ({ ...o, text: o.type === "add" ? lb[o.b] : la[o.a] }));
       this.ops = ops;
       const add = ops.filter((o) => o.type === "add").length, del = ops.filter((o) => o.type === "del").length;
-      summary.textContent = add || del ? `+${add} −${del} · ${t("{n} lines compared", { n: Math.max(la.length, lb.length) })}` : t("The texts are identical");
+      summary.textContent = (add || del ? `+${add} −${del} · ${t("{n} lines compared", { n: Math.max(la.length, lb.length) })}` : t("The texts are identical"))
+        + (raw.coarse ? ` · ${t("too different to match line by line: shown as one removed block and one added block")}` : "") + (enc ? ` · ${enc}` : "");
       summary.className = `stat ${add || del ? "" : "ok"}`;
       out.hidden = false;
       const shown = onlyChanges.input.checked ? ops.filter((o, i) => o.type !== "ctx" || ops.slice(Math.max(0, i - 3), i + 4).some((x) => x.type !== "ctx")) : ops;
@@ -99,8 +124,12 @@ const diffTool = {
     for (const c of [ignoreWs, ignoreCase, onlyChanges]) c.input.addEventListener("change", update);
     this.ui = { a, b, files };
     (async () => {
-      if (files[0]) a.value = await readAsText(files[0]).catch(() => "");
-      if (files[1]) b.value = await readAsText(files[1]).catch(() => "");
+      const notes = [];
+      for (const [f, box] of [[files[0], a], [files[1], b]]) {
+        if (!f) continue;
+        try { const { text, encoding } = await readTextInfo(f); box.value = text; if (encodingNote(encoding)) notes.push(`${f.name}: ${encodingNote(encoding)}`); } catch (_) { box.value = ""; }
+      }
+      enc = notes.join(" · ");
       update();
     })();
   },
@@ -163,13 +192,23 @@ function md5() {
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 const ALGOS = [["sha256", "SHA-256"], ["sha1", "SHA-1"], ["md5", "MD5"], ["sha512", "SHA-512"], ["crc32", "CRC32"]];
+const SHA_LIMIT = 2 * 1024 ** 3;
 
 async function hashBlob(blob, algos, progress) {
   const out = {};
   const subtle = algos.filter((a) => a.startsWith("sha"));
   if (subtle.length) {
-    const buf = await blob.arrayBuffer();
-    for (const a of subtle) out[a] = hex(await crypto.subtle.digest(a.replace("sha", "SHA-"), buf));
+    // WebCrypto hashes one whole buffer, it cannot be fed in pieces: a multi-gigabyte file has to be refused in
+    // plain words instead of dying on "could not be read" or taking the tab down. MD5 and CRC32 below are streamed.
+    const tooBig = () => new Error(t("{name} is too big for SHA hashes in the browser (the limit is about 2 GB); MD5 and CRC32 work at any size", { name: blob.name }));
+    if (blob.size > SHA_LIMIT) throw tooBig();
+    try {
+      const buf = await blob.arrayBuffer();
+      for (const a of subtle) out[a] = hex(await crypto.subtle.digest(a.replace("sha", "SHA-"), buf));
+    } catch (err) {
+      if (blob.size > 256 * 1024 * 1024) throw tooBig(); // a big file that fails here ran out of memory
+      throw err;
+    }
   }
   if (algos.includes("md5") || algos.includes("crc32")) {
     const m = algos.includes("md5") ? md5() : null;
@@ -245,17 +284,23 @@ const hashTool = {
 // ---------- word count & case ----------
 
 const words = (s) => (s.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []);
+/** The parts of an identifier or phrase: split at anything that is not a letter or digit and at aB / ABc case steps,
+ *  so my-var, my_var, myVar and "my var" all give [my, var]. Apostrophes inside a word (don't, п'ять) are dropped. */
+const tokens = (s) => s.replace(/(?<=\p{L})['’ʼ](?=\p{L})/gu, "").replace(/(\p{Ll}|\p{N})(\p{Lu})/gu, "$1 $2").replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2").match(/[\p{L}\p{N}]+/gu) || [];
+const capital = (w) => { const [first, ...rest] = [...w]; return first.toUpperCase() + rest.join("").toLowerCase(); };
 const CASES = {
   none: (s) => s,
   upper: (s) => s.toUpperCase(),
   lower: (s) => s.toLowerCase(),
-  title: (s) => s.toLowerCase().replace(/(^|[\s(\["'])(\p{L})/gu, (m, p, c) => p + c.toUpperCase()),
+  // A word starts after a space, an opening bracket or quote, or a ' or " that does not follow a letter: the
+  // apostrophe inside don't, o'clock, п'ять or об’єднання is part of the word, not the start of a new one.
+  title: (s) => s.toLowerCase().replace(/(?<=^|[\s(\[«“„]|(?<![\p{L}\p{N}])["'‘])\p{L}/gu, (c) => c.toUpperCase()),
   sentence: (s) => s.toLowerCase().replace(/(^\s*|[.!?]\s+)(\p{L})/gu, (m, p, c) => p + c.toUpperCase()),
-  camel: (s) => words(s).map((w, i) => (i ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w.toLowerCase())).join(""),
-  pascal: (s) => words(s).map((w) => w[0].toUpperCase() + w.slice(1).toLowerCase()).join(""),
-  snake: (s) => words(s).map((w) => w.toLowerCase()).join("_"),
-  kebab: (s) => words(s).map((w) => w.toLowerCase()).join("-"),
-  constant: (s) => words(s).map((w) => w.toUpperCase()).join("_"),
+  camel: (s) => tokens(s).map((w, i) => (i ? capital(w) : w.toLowerCase())).join(""),
+  pascal: (s) => tokens(s).map(capital).join(""),
+  snake: (s) => tokens(s).map((w) => w.toLowerCase()).join("_"),
+  kebab: (s) => tokens(s).map((w) => w.toLowerCase()).join("-"),
+  constant: (s) => tokens(s).map((w) => w.toUpperCase()).join("_"),
   invert: (s) => [...s].map((c) => (c === c.toUpperCase() ? c.toLowerCase() : c.toUpperCase())).join(""),
 };
 
@@ -307,7 +352,7 @@ const textCaseTool = {
     input.addEventListener("input", debounce(update, 100));
     for (const c of [mode, trim.input, empty.input, dedupe.input, sort.input, rev.input, squeeze.input]) c.addEventListener("change", update);
     this.ui = { input, output, files };
-    if (files[0]) readAsText(files[0]).then((x) => { input.value = x; update(); }).catch(() => update()); else update();
+    if (files[0]) readText(files[0]).then((x) => { input.value = x; update(); }).catch(() => update()); else update();
   },
   async run() {
     const { output, files } = this.ui;
@@ -380,7 +425,7 @@ const jwtTool = {
     input.addEventListener("input", debounce(update, 120));
     secret.addEventListener("input", debounce(update, 200));
     this.ui = { input };
-    if (files[0]) readAsText(files[0]).then((x) => { input.value = x.trim(); update(); }).catch(() => {});
+    if (files[0]) readText(files[0]).then((x) => { input.value = x.trim(); update(); }).catch(() => {});
   },
   async run() {
     if (!this.payload) throw new Error("Paste a token first");
@@ -419,7 +464,8 @@ const urlTool = {
         if (!s.trim()) { output.value = ""; return; }
         let u;
         try { u = new URL(s.trim()); } catch (_) { try { u = new URL("https://" + s.trim()); } catch (__) { status.textContent = t("Not a URL"); status.className = "stat bad"; output.value = ""; return; } }
-        const rows = [["Protocol", u.protocol], ["Host", u.hostname], ["Port", u.port || t("(default)")], ["Path", decodeURIComponent(u.pathname)], ["Hash", u.hash ? decodeURIComponent(u.hash) : ""], ...(u.username ? [["User", u.username]] : [])];
+        const plain = (x) => { try { return decodeURIComponent(x); } catch (_) { return x; } }; // "#50%off" is a fine URL but not valid percent-encoding
+        const rows = [["Protocol", u.protocol], ["Host", u.hostname], ["Port", u.port || t("(default)")], ["Path", plain(u.pathname)], ["Hash", u.hash ? plain(u.hash) : ""], ...(u.username ? [["User", u.username]] : [])];
         const params = [...u.searchParams.entries()];
         for (const [k, v] of params) rows.push([`? ${k}`, v]);
         table.replaceChildren(...rows.filter(([, v]) => v).map(([k, v]) => el("tr", {}, [el("th", { text: k }), el("td", { text: v })])));
@@ -464,6 +510,7 @@ const regexTool = {
       el("div", { class: "row" }, [el("div", { class: "field", style: "flex: 1 1 320px" }, [el("span", { class: "field-label", text: "Pattern", "data-key": "Pattern" }), pattern]), el("span", { class: "field-label", text: "Flags" }), ...flags.map((f) => f.label)]),
       field("Test text", text), status, out, groups, el("div", { class: "row" }, [field("Replace with", replacement)]), rf,
     );
+    let enc = ""; // "encoding: Windows-1251" when the dropped file was not UTF-8
     const update = () => {
       this.matches = [];
       const src = pattern.value, fl = flags.filter((f) => f.input.checked).map((f) => f.label.textContent).join("");
@@ -475,7 +522,7 @@ const regexTool = {
       if (re.global) { for (const m of s.matchAll(re)) { matches.push(m); if (matches.length > 5000) break; } }
       else { const m = s.match(re); if (m) matches.push(m); }
       this.matches = matches;
-      status.textContent = matches.length ? plural(matches.length, "match", "matches") : t("No match");
+      status.textContent = (matches.length ? plural(matches.length, "match", "matches") : t("No match")) + (enc ? ` · ${enc}` : "");
       status.className = `stat ${matches.length ? "ok" : ""}`;
       // highlighted text
       const frag = [];
@@ -501,7 +548,7 @@ const regexTool = {
     for (const i of [pattern, text, replacement]) i.addEventListener("input", go);
     for (const f of flags) f.input.addEventListener("change", update);
     this.ui = { text };
-    if (files[0]) readAsText(files[0]).then((x) => { text.value = x; update(); }).catch(() => {}); else update();
+    if (files[0]) readTextInfo(files[0]).then((x) => { text.value = x.text; enc = encodingNote(x.encoding); update(); }).catch(() => {}); else update();
   },
   async run() {
     if (!this.matches?.length) throw new Error("No matches to save");

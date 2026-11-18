@@ -1,12 +1,26 @@
-import { el, baseName, field, select, number, checkbox, download, readAsText, plural, toast, t } from "../util.js";
+import { el, baseName, field, select, number, checkbox, download, readText, readTextInfo, encodingNote, plural, toast, t } from "../util.js";
 
 // ---------- CSV helpers (RFC 4180) ----------
 
-function detectDelimiter(text) {
-  const head = text.split(/\r?\n/).slice(0, 5).join("\n");
-  const counts = [[",", 0], [";", 0], ["\t", 0], ["|", 0]].map(([d]) => [d, (head.match(new RegExp(d === "|" ? "\\|" : d, "g")) || []).length]);
-  counts.sort((a, b) => b[1] - a[1]);
-  return counts[0][1] ? counts[0][0] : ",";
+/**
+ * The delimiter that splits the first rows into the same number (2+) of columns, read with the real parser so
+ * quoted cells count as one. Counting characters picked "," for "1,5;2,5;3,5", the way Excel writes CSV in
+ * Ukraine and most of Europe: on a tie tab and ";" win over "," because a comma is also a decimal mark.
+ */
+export function detectDelimiter(text) {
+  const LIMIT = 20000;
+  const head = text.length > LIMIT ? text.slice(0, LIMIT) : text;
+  let best = ",", bestScore = 0;
+  for (const d of ["\t", ";", ",", "|"]) {
+    let rows = parseCsv(head, d);
+    if (head !== text && rows.length > 1) rows = rows.slice(0, -1); // the cut may have landed inside the last row
+    rows = rows.slice(0, 10);
+    const cols = rows[0]?.length || 0;
+    if (cols < 2) continue;
+    const score = rows.filter((r) => r.length === cols).length / rows.length;
+    if (score > bestScore) { best = d; bestScore = score; }
+  }
+  return best;
 }
 
 export function parseCsv(text, delimiter) {
@@ -18,7 +32,7 @@ export function parseCsv(text, delimiter) {
       if (ch === '"') {
         if (text[i + 1] === '"') { cell += '"'; i++; } else inQuotes = false;
       } else cell += ch;
-    } else if (ch === '"') inQuotes = true;
+    } else if (ch === '"' && !cell.trim()) { inQuotes = true; cell = ""; } // only at the start of a cell: 24" stays an inch mark
     else if (ch === delimiter) { row.push(cell); cell = ""; }
     else if (ch === "\n" || ch === "\r") {
       if (ch === "\r" && text[i + 1] === "\n") i++;
@@ -72,9 +86,10 @@ function textLayout(root, { inputLabel, outputLabel, placeholder }) {
   return { input, output };
 }
 
+/** Loads the dropped file into `input`; `after` gets a note such as "encoding: Windows-1251" ("" for UTF-8). */
 async function fillFromFile(files, input, after) {
   if (!files[0]) return;
-  try { input.value = await readAsText(files[0]); after?.(); } catch (_) { /* ignore */ }
+  try { const { text, encoding } = await readTextInfo(files[0]); input.value = text; after?.(encodingNote(encoding)); } catch (_) { /* ignore */ }
 }
 
 // ---------- CSV ⇄ JSON ----------
@@ -97,7 +112,7 @@ const csvJsonTool = {
     const indent = select([["2", "2 spaces"], ["4", "4 spaces"], ["0", "Minified"]], "2");
     root.prepend(el("div", { class: "row" }, [field("CSV delimiter", delimiter), field("JSON indent", indent), header.label, numbers.label]));
     this.ui = { input, output, delimiter, header, numbers, indent, files };
-    fillFromFile(files, input);
+    fillFromFile(files, input, (enc) => { if (enc) toast(`${files[0].name}: ${enc}`); });
   },
   async run() {
     const u = this.ui;
@@ -204,6 +219,40 @@ export function jsonError(text) {
   }
 }
 
+/**
+ * What JSON.parse changes in valid JSON without saying so: integers too long for a JavaScript number (a 64-bit id
+ * 12345678901234567890 comes back as …567000) and repeated keys (the last one wins). `text` must already parse.
+ */
+export function jsonLosses(text) {
+  const big = [], dup = [];
+  let bigCount = 0;
+  const stack = []; // per open { or [: the keys seen so far (null in an array) and whether a key comes next
+  const number = /-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i], top = stack[stack.length - 1];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      if (top?.keys && top.key) {
+        const k = JSON.parse(text.slice(i, j + 1));
+        if (!top.keys.has(k)) top.keys.add(k); else if (!dup.includes(k)) dup.push(k);
+        top.key = false;
+      }
+      i = j;
+    } else if (c === "{") stack.push({ keys: new Set(), key: true });
+    else if (c === "[") stack.push({ keys: null });
+    else if (c === "}" || c === "]") stack.pop();
+    else if (c === "," && top?.keys) top.key = true;
+    else if (c === "-" || (c >= "0" && c <= "9")) {
+      number.lastIndex = i;
+      const m = number.exec(text)?.[0] || c;
+      if (/^-?\d{16,}$/.test(m) && !Number.isSafeInteger(Number(m))) { bigCount++; if (big.length < 2) big.push(m); }
+      i += m.length - 1;
+    }
+  }
+  return { big, bigCount, dup };
+}
+
 const jsonFormatTool = {
   id: "json-format",
   title: "JSON format & validate",
@@ -213,7 +262,7 @@ const jsonFormatTool = {
   filesOptional: true,
   noAutoDownload: true,
   hint: "Optional: drop a .json file",
-  runLabel: "Format",
+  runLabel: "Format JSON",
   renderOptions(root, files) {
     const { input, output } = textLayout(root, { inputLabel: "Input", outputLabel: "Output", placeholder: '{"a": 1, "b": [1, 2, 3]}' });
     const mode = select([["2", "Pretty, 2 spaces"], ["4", "Pretty, 4 spaces"], ["tab", "Pretty, tabs"], ["0", "Minify"]], "2");
@@ -221,7 +270,7 @@ const jsonFormatTool = {
     const status = el("div", { class: "stat" });
     root.prepend(el("div", { class: "row" }, [field("Mode", mode), sortKeys.label]), status);
     this.ui = { input, output, mode, sortKeys, status, files };
-    fillFromFile(files, input);
+    fillFromFile(files, input, (enc) => { status.textContent = enc; });
   },
   async run() {
     const u = this.ui;
@@ -247,7 +296,12 @@ const jsonFormatTool = {
     const indent = u.mode.value === "tab" ? "\t" : Number(u.mode.value);
     const out = JSON.stringify(data, null, indent) + (indent ? "\n" : "");
     u.output.value = out;
-    u.status.textContent = t("✔ Valid JSON · {n} characters", { n: out.length.toLocaleString() });
+    const lost = jsonLosses(text);
+    u.status.textContent = [
+      t("✔ Valid JSON · {n} characters", { n: out.length.toLocaleString() }),
+      lost.bigCount ? t("⚠ numbers longer than 15 digits were rounded, e.g. {example}: put such IDs in quotes to keep them exact", { example: lost.big.join(", ") }) : "",
+      lost.dup.length ? t("⚠ repeated key {key}: only its last value is kept", { key: lost.dup.slice(0, 3).map((k) => JSON.stringify(k)).join(", ") }) : "",
+    ].filter(Boolean).join(" · ");
     const base = u.files[0] ? baseName(u.files[0].name) : "data";
     return [{ name: `${base}${indent ? "" : ".min"}.json`, blob: new Blob([out], { type: "application/json" }) }];
   },
@@ -308,7 +362,7 @@ const base64Tool = {
       u.output.value = out.length > 2_000_000 ? out.slice(0, 2_000_000) + "\n…(truncated in preview, download for the full output)" : out;
       return [{ name: `${file ? baseName(file.name) : "text"}.base64.txt`, blob: new Blob([out], { type: "text/plain" }), note: `${out.length.toLocaleString()} chars` }];
     }
-    const src = u.input.value.trim() || (file ? await readAsText(file) : "");
+    const src = u.input.value.trim() || (file ? await readText(file) : "");
     if (!src) throw new Error("Paste Base64 to decode");
     let bytes;
     try { bytes = base64ToBytes(src); } catch (_) { throw new Error("That is not valid Base64"); }
@@ -358,12 +412,14 @@ export function parseTable(text) {
 }
 
 const isNum = (v) => /^-?\d[\d\s]*([.,]\d+)?%?$/.test(String(v).trim()) && String(v).trim() !== "";
+/** The widest row. Not Math.max(...rows.map(…)): spreading 130,000 rows overflows the call stack. */
+export const maxCols = (rows) => rows.reduce((m, r) => Math.max(m, r.length), 0);
 export function toMarkdownTable(rows, header = true) {
   if (!rows.length) return "";
-  const cols = Math.max(...rows.map((r) => r.length));
+  const cols = maxCols(rows);
   const grid = rows.map((r) => Array.from({ length: cols }, (_, i) => String(r[i] ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ")));
   const body = header ? grid.slice(1) : grid;
-  const widths = Array.from({ length: cols }, (_, i) => Math.max(3, ...grid.map((r) => [...r[i]].length)));
+  const widths = Array.from({ length: cols }, (_, i) => grid.reduce((m, r) => Math.max(m, [...r[i]].length), 3));
   const numeric = Array.from({ length: cols }, (_, i) => body.length > 0 && body.every((r) => !r[i] || isNum(r[i])));
   const line = (r) => `| ${r.map((c, i) => (numeric[i] ? c.padStart(widths[i]) : c.padEnd(widths[i]))).join(" | ")} |`;
   const head = header ? grid[0] : Array.from({ length: cols }, (_, i) => `col${i + 1}`);
@@ -410,17 +466,18 @@ const tableTool = {
     const tableName = el("input", { type: "text", value: "data", placeholder: "Table name (SQL)" });
     const status = el("div", { class: "stat" });
     root.prepend(el("div", { class: "row" }, [field("Convert to", to), header.label, field("Table name (SQL)", tableName)]), status);
+    let enc = ""; // "encoding: Windows-1251" when the dropped file was not UTF-8
     const update = () => {
       try {
         const { rows, from } = parseTable(input.value);
         if (!rows.length) { output.value = ""; status.textContent = ""; return; }
         output.value = convertTable(rows, to.value, header.input.checked, tableName.value.trim() || "data");
-        status.textContent = t("Read as {from}: {rows} × {cols}", { from: from.toUpperCase(), rows: plural(rows.length, "row"), cols: Math.max(...rows.map((r) => r.length)) });
+        status.textContent = t("Read as {from}: {rows} × {cols}", { from: from.toUpperCase(), rows: plural(rows.length, "row"), cols: maxCols(rows) }) + (enc ? ` · ${enc}` : "");
       } catch (err) { output.value = ""; status.textContent = err.message; }
     };
     input.addEventListener("input", update); to.addEventListener("change", update); header.input.addEventListener("change", update); tableName.addEventListener("input", update);
     this.ui = { input, output, to, files };
-    fillFromFile(files, input, update);
+    fillFromFile(files, input, (e) => { enc = e; update(); });
     update();
   },
   async run() {

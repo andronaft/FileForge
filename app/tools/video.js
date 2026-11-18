@@ -39,8 +39,9 @@ function seek(v, time) {
 
 const fmtTime = (s) => { const m = Math.floor(s / 60), r = s - m * 60; return `${m}:${r.toFixed(1).padStart(4, "0")}`; };
 
-/** Start / end inputs with a scrub preview, shared by both tools. */
-function timeline(root, file, onReady) {
+/** Start / end inputs with a scrub preview, shared by both tools. End starts at `firstSeconds` (a GIF wants a short
+ *  part; frames are taken from the whole video). */
+function timeline(root, file, onReady, firstSeconds = Infinity) {
   const start = number(0, { min: 0, step: "0.1", "data-noremember": "" }), end = number(0, { min: 0, step: "0.1", "data-noremember": "" });
   const scrub = el("input", { type: "range", min: 0, max: 1000, value: 0, class: "video-scrub", "aria-label": "Position" });
   const pos = el("span", { class: "stat", text: "0:00.0" });
@@ -49,7 +50,7 @@ function timeline(root, file, onReady) {
   const setStart = el("button", { type: "button", class: "small", text: "Start here", onclick: () => { start.value = cur().toFixed(1); start.dispatchEvent(new Event("input")); } });
   const setEnd = el("button", { type: "button", class: "small", text: "End here", onclick: () => { end.value = cur().toFixed(1); end.dispatchEvent(new Event("input")); } });
   root.append(canvas, el("div", { class: "row video-row" }, [scrub, pos, setStart, setEnd]), el("div", { class: "row" }, [field("Start (seconds)", start), field("End (seconds)", end)]), info);
-  let v = null, busy = false, wanted = null;
+  let v = null, busy = false, wanted = null, shown = 0;
   const cur = () => (v ? (Number(scrub.value) / 1000) * v.duration : 0);
   const paint = async (time) => {
     wanted = time;
@@ -60,6 +61,7 @@ function timeline(root, file, onReady) {
       await seek(v, at);
       canvas.getContext("2d").drawImage(v, 0, 0, canvas.width, canvas.height);
       pos.textContent = fmtTime(at);
+      shown = at;
     }
     busy = false;
   };
@@ -70,6 +72,8 @@ function timeline(root, file, onReady) {
     /** Resolves with the <video> once it can be read; a Run pressed early waits for it instead of failing. */
     ready: new Promise((res, rej) => { resolveReady = res; rejectReady = rej; }),
     get video() { return v; },
+    /** The time of the frame in the preview. Not video.currentTime: a Run moves that and leaves the preview alone. */
+    shown: () => shown,
     range() {
       const d = v?.duration || 0;
       const a = Math.max(0, Math.min(d, Number(start.value) || 0));
@@ -82,7 +86,7 @@ function timeline(root, file, onReady) {
     const k = Math.min(1, 640 / v.videoWidth, 300 / v.videoHeight);
     canvas.width = Math.max(1, Math.round(v.videoWidth * k)); canvas.height = Math.max(1, Math.round(v.videoHeight * k));
     start.max = end.max = v.duration.toFixed(1);
-    if (!Number(end.value)) end.value = Math.min(v.duration, 5).toFixed(1);
+    if (!Number(end.value)) end.value = Math.min(Number.isFinite(v.duration) ? v.duration : 5, firstSeconds).toFixed(1);
     paint(0);
     onReady(api);
     resolveReady(v);
@@ -108,7 +112,7 @@ const gifTool = {
     const speed = select([["0.5", "0.5× (slow motion)"], ["1", "1× (normal)"], ["1.5", "1.5×"], ["2", "2× (faster)"], ["4", "4×"]], "1");
     const colours = select([["256", "256 colours (best)"], ["128", "128 colours"], ["64", "64 colours (smaller)"], ["32", "32 colours"]], "256");
     const loop = checkbox("Loop forever", true);
-    const tl = timeline(root, files[0], () => estimate());
+    const tl = timeline(root, files[0], () => estimate(), 5);
     root.append(el("div", { class: "row" }, [field("Frame rate", fps), field("Width", width), field("Speed", speed), field("Colours", colours), loop.label]));
     const estimate = () => {
       const v = tl.video; if (!v) return;
@@ -175,7 +179,7 @@ const framesTool = {
     const o = this.opts, v = await o.tl.ready;
     const [a, b] = o.tl.range();
     let times;
-    if (o.mode.value === "one") times = [(Number(o.tl.video.currentTime) || 0)];
+    if (o.mode.value === "one") times = [o.tl.shown()];
     else if (o.mode.value === "every") { const step = Math.max(0.1, Number(o.every.value) || 5); times = []; for (let x = a; x <= b + 1e-6 && times.length < 500; x += step) times.push(x); }
     else { const n = Math.max(1, Math.min(500, Number(o.count.value) || 10)); times = Array.from({ length: n }, (_, i) => (n === 1 ? (a + b) / 2 : a + ((b - a) * i) / (n - 1))); }
     const mime = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp" }[o.format.value], ext = o.format.value === "jpeg" ? "jpg" : o.format.value;

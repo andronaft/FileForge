@@ -2,6 +2,7 @@ import { el, formatBytes, download, zipFiles, toast, withType, guessType, plural
 import { initLang, setLang, getLang, LANGS } from "./i18n.js";
 import { icon } from "./icons.js";
 import { createSearch } from "./search.js";
+import { insights } from "./insights.js";
 import { imageTools } from "./tools/image.js";
 import { photoTools } from "./tools/photo.js";
 import { ocrTools } from "./tools/ocr.js";
@@ -10,11 +11,14 @@ import { videoTools } from "./tools/video.js";
 import { qrTools, audioTools } from "./tools/media.js";
 import { pdfTools, renderPdfPages } from "./tools/pdf.js";
 import { pdfMoreTools } from "./tools/pdf-more.js";
+import { packTools } from "./tools/pack.js";
+import { gifTools } from "./tools/gif.js";
+import { privacyTools } from "./tools/privacy.js";
 import { markdownTools } from "./tools/markdown.js";
 import { dataTools } from "./tools/data.js";
 import { textTools } from "./tools/text.js";
 import { pipelineTool } from "./tools/pipeline.js";
-import { fileTools } from "./tools/files.js";
+import { fileTools, decodeZipName } from "./tools/files.js";
 import { thumbnail, preview } from "./thumbs.js";
 import { isHeic, toBrowserImage } from "./heic.js";
 
@@ -22,14 +26,15 @@ await initLang();
 for (const n of document.querySelectorAll("[data-i18n]")) n.textContent = t(n.dataset.i18n);
 for (const n of document.querySelectorAll("[data-i18n-placeholder]")) n.placeholder = t(n.dataset.i18nPlaceholder);
 for (const n of document.querySelectorAll("[aria-label]")) n.setAttribute("aria-label", t(n.getAttribute("aria-label")));
+for (const n of document.querySelectorAll("[title]")) n.title = t(n.title);
 
 const groups = [
-  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1), ...qrTools] },
+  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1), ...gifTools, ...qrTools] },
   { id: "video", title: "Video & audio", icon: "video", tools: [...videoTools, ...audioTools] },
-  { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools, ...pdfMoreTools] },
+  { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools.slice(0, 1), ...packTools, ...pdfTools.slice(1), ...pdfMoreTools] },
   { id: "office", title: "Word & Excel", icon: "office", tools: officeTools },
   { id: "text", title: "Text & data", icon: "text", tools: [...markdownTools, ...dataTools, ...textTools] },
-  { id: "files", title: "Files", icon: "file", tools: fileTools },
+  { id: "files", title: "Files", icon: "file", tools: [...privacyTools, ...fileTools] },
   { id: "batch", title: "Batch", icon: "zap", tools: [pipelineTool] },
 ];
 const tools = groups.flatMap((g) => g.tools);
@@ -44,7 +49,8 @@ const navSelect = document.getElementById("navSelect");
 const main = document.getElementById("main");
 const VERSION = document.querySelector('meta[name="fileforge-version"]')?.content || "";
 
-const state = { tool: null, files: [], results: [], busy: false, progress: null };
+// runId changes whenever a job starts or is stopped: a job that finds another number when it returns was abandoned.
+const state = { tool: null, files: [], results: [], busy: false, progress: null, runId: 0, runLabel: "" };
 const ui = {};
 
 // ---------- settings ----------
@@ -73,7 +79,16 @@ function toggleFav(id) {
   try { localStorage.setItem("fileforge.favourites", JSON.stringify(list)); } catch (_) { /* ignore */ }
   toast(list.includes(id) ? "Added to favourites" : "Removed from favourites");
   renderNav();
-  if (state.tool) paintFav(); else renderHome();
+  if (state.tool) { paintFav(); return; }
+  // The home page is rebuilt (its Favourites row changed): keep the card where it was, and the focus on its star.
+  const star = `.tool-card[data-id="${id}"] .fav-btn`;
+  const before = main.querySelector(star)?.getBoundingClientRect().top;
+  renderHome(true);
+  const btn = main.querySelector(star);
+  if (btn && before != null) {
+    window.scrollBy({ top: btn.getBoundingClientRect().top - before, behavior: "instant" });
+    btn.focus({ preventScroll: true });
+  }
 }
 function favButton(tool) {
   return el("button", { type: "button", class: "icon fav-btn", "aria-pressed": isFav(tool.id) ? "true" : "false", title: isFav(tool.id) ? "Remove from favourites" : "Add to favourites", onclick: (e) => { e.preventDefault(); toggleFav(tool.id); } }, [icon("star", 18)]);
@@ -107,13 +122,15 @@ function toggleGroup(id) {
   if (set.has(id)) set.delete(id); else set.add(id);
   try { localStorage.setItem("fileforge.navCollapsed", JSON.stringify([...set])); } catch (_) { /* ignore */ }
   renderNav();
+  navList.querySelector(`.nav-group[data-group="${id}"]`)?.focus(); // the list was rebuilt under the keyboard
 }
 function navGroup(id, title, count, collapsed) {
-  return el("button", { type: "button", class: "nav-group", "aria-expanded": collapsed ? "false" : "true", onclick: () => toggleGroup(id) }, [
+  return el("button", { type: "button", class: "nav-group", "data-group": id, "aria-expanded": collapsed ? "false" : "true", onclick: () => toggleGroup(id) }, [
     el("span", { class: "nav-group-title", text: title }), el("span", { class: "nav-count", text: String(count) }), icon("chevron", 14),
   ]);
 }
-function renderNav() {
+/** `reveal`: scroll the sidebar to the open tool (after a tool change, not while the filter is being typed). */
+function renderNav(reveal = false) {
   navList.replaceChildren();
   const collapsed = collapsedGroups();
   navSelect.replaceChildren(el("option", { value: "home", text: "All tools", selected: !state.tool }));
@@ -137,9 +154,10 @@ function renderNav() {
   }
   if (!shown.size) navList.append(el("div", { class: "nav-empty", text: "No tool matches" }));
   nav.querySelector(".nav-home")?.classList.toggle("active", !state.tool);
+  if (reveal) navList.querySelector(".nav-item.active")?.scrollIntoView({ block: "nearest" });
 }
 navSelect.addEventListener("change", () => { location.hash = navSelect.value === "home" ? "" : `#${navSelect.value}`; });
-navFilter.addEventListener("input", renderNav);
+navFilter.addEventListener("input", () => renderNav());
 navFilter.addEventListener("keydown", (e) => {
   if (e.key === "Enter") { const first = navList.querySelector(".nav-item"); if (first) { location.hash = first.getAttribute("href"); navFilter.value = ""; renderNav(); } }
   if (e.key === "Escape") { navFilter.value = ""; renderNav(); navFilter.blur(); }
@@ -240,6 +258,14 @@ function openPalette(withFiles) {
       el("strong", { text: t("Open {files} with…", { files: plural(files.length, "file") }) }),
       el("span", { text: files.length === 1 ? files[0].name : t("{name} and {more} more", { name: files[0].name, more: files.length - 1 }) }),
     );
+    // A look inside the files: what they are (a scan, a form, a photo with a location) and the tool for that.
+    const box = el("div", { class: "palette-insights" }), mine = paletteFiles;
+    paletteNote.append(box);
+    insights(files).then((facts) => {
+      if (paletteFiles !== mine) return;
+      box.replaceChildren(...facts.filter((f) => tools.some((x) => x.id === f.tool)).map((f) => el("button", { type: "button", class: "palette-insight", onclick: () => { palette.close(); openWith(f.tool, f.files); } },
+        [icon("zap", 16), el("span", { text: f.text }), el("strong", { text: f.action })])));
+    });
   }
   paletteInput.value = "";
   paletteIndex = 0;
@@ -251,9 +277,13 @@ palette.addEventListener("close", () => { paletteFiles = null; });
 function renderPalette() {
   const q = paletteInput.value;
   // For dropped files: only the tools that take them, in the suggested order until something is typed.
-  const hits = paletteFiles
+  let hits = paletteFiles
     ? (q.trim() ? searchTools(q).filter((x) => paletteFiles.tools.includes(x)) : paletteFiles.tools)
-    : searchTools(q).slice(0, 12);
+    : q.trim() ? searchTools(q).slice(0, 12)
+      : [...new Set([...recentIds(), ...POPULAR])].map((id) => tools.find((x) => x.id === id)).filter(Boolean).slice(0, 12);
+  // Nothing has every word: offer what has some of them rather than a dead end.
+  let similar = false;
+  if (!hits.length && q.trim()) { hits = search.similar(q).filter((x) => !paletteFiles || paletteFiles.tools.includes(x)).slice(0, 6); similar = hits.length > 0; }
   paletteIndex = Math.min(paletteIndex, Math.max(0, hits.length - 1));
   paletteList.replaceChildren(...hits.map((tool, i) => el("button", {
     type: "button", class: `palette-item${i === paletteIndex ? " active" : ""}`, role: "option", "aria-selected": i === paletteIndex ? "true" : "false",
@@ -264,13 +294,20 @@ function renderPalette() {
     },
     onmousemove: () => { if (paletteIndex !== i) { paletteIndex = i; renderPalette(); } },
   }, [icon(tool.icon || tool.id, 18), el("span", { class: "palette-text" }, [el("strong", { text: tool.title }), el("small", { text: tool.description })]), el("kbd", { class: "palette-group", text: tool.group.title })])));
-  if (!hits.length) paletteList.append(el("div", { class: "palette-empty", text: "No tool matches" }));
+  if (similar) paletteList.prepend(el("div", { class: "palette-label", text: "No exact match. Similar tools:" }));
+  if (!hits.length) paletteList.append(el("div", { class: "palette-empty", text: "No tool matches. Try another word, or just drop the file here and FileForge will suggest tools." }));
 }
 paletteInput.addEventListener("input", () => { paletteIndex = 0; renderPalette(); });
 paletteInput.addEventListener("keydown", (e) => {
   const items = paletteList.querySelectorAll(".palette-item");
-  if (e.key === "ArrowDown") { e.preventDefault(); paletteIndex = (paletteIndex + 1) % Math.max(1, items.length); renderPalette(); }
-  else if (e.key === "ArrowUp") { e.preventDefault(); paletteIndex = (paletteIndex - 1 + items.length) % Math.max(1, items.length); renderPalette(); }
+  const move = (step) => {
+    e.preventDefault();
+    paletteIndex = (paletteIndex + step + items.length) % Math.max(1, items.length);
+    renderPalette();
+    paletteList.querySelector(".palette-item.active")?.scrollIntoView({ block: "nearest" }); // the list scrolls
+  };
+  if (e.key === "ArrowDown") move(1);
+  else if (e.key === "ArrowUp") move(-1);
   else if (e.key === "Enter") { e.preventDefault(); items[paletteIndex]?.click(); }
 });
 palette.addEventListener("click", (e) => { if (e.target === palette) palette.close(); });
@@ -308,6 +345,8 @@ document.getElementById("settingsBtn").addEventListener("click", () => { renderS
 
 const shortcutsDlg = document.getElementById("shortcuts");
 const MOD = navigator.platform.startsWith("Mac") ? "⌘" : "Ctrl";
+// The hint on the search button is written for a Mac in index.html.
+if (MOD !== "⌘") { const hint = document.querySelector("#searchBtn kbd"); if (hint) hint.textContent = `${MOD} K`; }
 function renderShortcuts() {
   const rows = [
     [`${MOD} K`, "Find a tool"], [`${MOD} Enter`, "Run the current tool"], ["/", "Filter the tool list"], ["?", "This list"],
@@ -368,13 +407,12 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- home ----------
+// The tool is always in the hash; a link with ?tool= (how the extension opens the app) is rewritten at start-up.
 function requestedToolId() {
-  const hash = location.hash.replace(/^#/, "");
-  if (hash) return hash;
-  return new URLSearchParams(location.search).get("tool") || "home";
+  return location.hash.replace(/^#/, "") || "home";
 }
 
-const POPULAR = ["pdf-merge", "compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
+const POPULAR = ["pdf-merge", "pdf-pack", "compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
 
 function toolCard(tool) {
   return el("a", { class: "tool-card", href: `#${tool.id}`, "data-id": tool.id }, [
@@ -384,7 +422,8 @@ function toolCard(tool) {
   ]);
 }
 
-function renderHome() {
+function renderHome(keepScroll = false) {
+  stopRun();
   state.tool = null;
   state.results = [];
   document.title = "FileForge";
@@ -399,7 +438,7 @@ function renderHome() {
       el("div", { class: "dz-hint", text: "FileForge shows the tools that can open it: pick one, or press Enter for the suggested one" }),
     ]),
   ]);
-  drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+  drop.addEventListener("keydown", (e) => { if (e.target === drop && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fileInput.click(); } });
   ui.dropzone = drop;
   const recent = recentIds().map((id) => tools.find((x) => x.id === id));
   const favs = favIds().map((id) => tools.find((x) => x.id === id));
@@ -429,11 +468,12 @@ function renderHome() {
       el("span", { text: VERSION ? `v${VERSION}` : "" }),
     ]),
   ].filter(Boolean));
-  window.scrollTo(0, 0);
+  if (!keepScroll) window.scrollTo(0, 0);
 }
 
 // ---------- tool view ----------
 function mount() {
+  stopRun(); // a job belongs to the tool view that started it
   const id = requestedToolId();
   const tool = tools.find((x) => x.id === id);
   if (!tool) { if (id !== "home") history.replaceState(null, "", location.pathname + location.search); state.files = []; renderHome(); return; }
@@ -443,20 +483,25 @@ function mount() {
   state.files = state.files.filter((f) => accepts(tool, f));
   if (tool.multiple === false) state.files = state.files.slice(0, 1);
   state.results = [];
-  state.busy = false;
   document.title = `${t(tool.title)} · FileForge`;
-  renderNav();
+  renderNav(true);
 
   const many = tool.multiple !== false;
   const fileInput = el("input", {
     type: "file", id: "fileInput", hidden: true,
-    // A ZIP can be picked too: addFiles unpacks it.
-    multiple: many, accept: tool.accept && many ? `${tool.accept},.zip` : tool.accept || "",
+    // A ZIP can be picked too: addFiles unpacks it. A tool that takes any file gets no filter at all: "*/*,.zip"
+    // would make the file dialog offer ZIP archives only.
+    multiple: many, accept: takesAnything(tool) ? "" : many ? `${tool.accept},.zip` : tool.accept,
     onchange: () => { addFiles([...fileInput.files]); fileInput.value = ""; },
   });
   const folderInput = many ? el("input", {
     type: "file", hidden: true, webkitdirectory: "", multiple: true,
-    onchange: () => { addFiles([...folderInput.files].filter((f) => !JUNK.test(f.webkitRelativePath || f.name))); folderInput.value = ""; },
+    onchange: () => {
+      const picked = [...folderInput.files].filter((f) => !JUNK.test(f.webkitRelativePath || f.name));
+      for (const f of picked) if (f.webkitRelativePath) f.relativePath = f.webkitRelativePath; // "site/blog/index.html"
+      addFiles(picked);
+      folderInput.value = "";
+    },
   }) : null;
   const dropzone = el("section", { class: "dropzone", tabindex: "0", role: "button", "aria-label": tool.multiple === false ? "Choose a file" : "Choose files" }, [
     fileInput,
@@ -471,19 +516,22 @@ function mount() {
       el("div", { class: "dz-hint", text: tool.hint || "" }),
     ]),
   ]);
-  dropzone.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); } });
+  // Only when the box itself has the focus: Enter on "a folder" inside it must stay that button's own.
+  dropzone.addEventListener("keydown", (e) => { if (e.target === dropzone && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); fileInput.click(); } });
   ui.dropzone = dropzone;
 
   ui.fileList = el("section", { class: "file-list" });
   ui.options = el("section", { class: "options card", hidden: !tool.filesOptional });
   ui.options.addEventListener("change", saveOptions);
   ui.options.addEventListener("input", saveOptions);
+  // Fields the user really typed in are carried over when the options are rebuilt (see typedOptions).
+  ui.options.addEventListener("input", (e) => { if (e.isTrusted && e.target?.dataset) e.target.dataset.edited = "1"; });
   ui.runBtn = el("button", { class: "primary", type: "button", text: tool.runLabel || "Run", title: `${MOD} Enter`, onclick: run });
   ui.cancelBtn = el("button", { type: "button", text: "Cancel", hidden: true, onclick: () => state.progress?.cancel() });
   ui.progress = el("div", { class: "progress", hidden: true, role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" }, [el("div", { class: "progress-bar" }), el("span", { class: "progress-text" })]);
   ui.actions = el("section", { class: "actions run-row", hidden: !tool.filesOptional }, [
     ui.runBtn,
-    el("button", { type: "button", text: "Clear", onclick: () => { state.files = []; state.results = []; refresh(); } }),
+    el("button", { type: "button", text: "Clear", onclick: () => { stopRun(); state.files = []; state.results = []; refresh({ fresh: true }); } }),
     ui.cancelBtn,
     ui.progress,
   ]);
@@ -521,9 +569,17 @@ function accepts(tool, f) {
 const JUNK = /(^|\/)(\.|__MACOSX\/|Thumbs\.db$|desktop\.ini$)/i;
 const MAX_EXPANDED = 2000;
 const isZip = (f) => f.type === "application/zip" || f.type === "application/x-zip-compressed" || /\.zip$/i.test(f.name);
+const takesAnything = (tool) => !tool.accept || tool.accept === "*/*";
+
+/** withType() returns a copy when it fills in the type: the copy keeps the folder path the original carried. */
+function typedFile(f) {
+  const g = withType(f);
+  if (g !== f && f.relativePath) g.relativePath = f.relativePath;
+  return g;
+}
 
 async function unzip(file) {
-  const zip = await JSZip.loadAsync(file);
+  const zip = await JSZip.loadAsync(file, { decodeFileName: decodeZipName });
   const out = [];
   for (const entry of Object.values(zip.files)) {
     if (entry.dir || JUNK.test(entry.name)) continue;
@@ -535,11 +591,12 @@ async function unzip(file) {
   return out;
 }
 
-/** Folders (as drop entries) and ZIPs become the files inside them; ZIPs are kept as is for a tool that takes ZIPs. */
+/** Folders (as drop entries) and ZIPs become the files inside them; ZIPs are kept as is for a tool that takes ZIPs
+ *  or any file at all (the checksum of a downloaded archive, an archive inside a new one). */
 async function expandFiles(files, tool = state.tool) {
   const out = [];
   for (const f of files) {
-    if (isZip(f) && !(tool && /zip/.test(tool.accept || ""))) {
+    if (isZip(f) && !(tool && (takesAnything(tool) || /zip/.test(tool.accept)))) {
       try {
         const inner = await unzip(f);
         if (inner.length) toast(t("Unpacked {files} from {name}", { files: plural(inner.length, "file"), name: f.name }));
@@ -563,8 +620,13 @@ function filesFromDrop(dt) {
   });
   const walk = async (entry) => {
     if (!entry || out.length >= MAX_EXPANDED || JUNK.test(entry.name)) return;
-    if (entry.isFile) out.push(await new Promise((res, rej) => entry.file(res, rej)));
-    else if (entry.isDirectory) {
+    if (entry.isFile) {
+      const f = await new Promise((res, rej) => entry.file(res, rej));
+      // Inside a dropped folder: the path from that folder on ("site/blog/index.html"), for tools that keep the structure.
+      const path = (entry.fullPath || "").replace(/^\/+/, "");
+      if (path.includes("/")) f.relativePath = path;
+      out.push(f);
+    } else if (entry.isDirectory) {
       const children = await readAll(entry.createReader());
       children.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
       for (const c of children) await walk(c);
@@ -576,15 +638,19 @@ function filesFromDrop(dt) {
 async function addFiles(incoming) {
   const tool = state.tool;
   if (!tool) return openFiles(incoming);
-  incoming = await expandFiles(incoming.map(withType), tool);
+  if (state.busy) { toast("Wait for the job to finish, or cancel it, before adding files", "error"); return; }
+  incoming = await expandFiles(incoming.map(typedFile), tool);
+  if (state.tool !== tool || state.busy) return; // unpacking took a while and the user moved on
   const skipped = [];
-  const accepted = incoming.map(withType).filter((f) => {
+  const accepted = incoming.map(typedFile).filter((f) => {
     const ok = accepts(tool, f);
     if (!ok) skipped.push(f.name);
     return ok;
   });
-  if (skipped.length === 1) toast(t("Skipped {name}: not a supported file type for this tool", { name: skipped[0] }), "error");
-  else if (skipped.length > 1) toast(t("Skipped {files} this tool does not take", { files: plural(skipped.length, "file") }), "error");
+  if (skipped.length) {
+    const names = skipped.slice(0, 2).join(", ") + (skipped.length > 2 ? ` +${skipped.length - 2}` : "");
+    toast(tool.hint && !tool.filesOptional ? t("Skipped {names}. This tool takes: {what}", { names, what: t(tool.hint) }) : t("Skipped {names}: this tool does not take such files", { names }), "error");
+  }
   if (!accepted.length) return;
   state.files = tool.multiple === false ? [accepted[0]] : [...state.files, ...accepted];
   state.results = [];
@@ -593,7 +659,11 @@ async function addFiles(incoming) {
 
 // Anywhere on the page is a drop target; the dashed box just shows where files go.
 const dropOverlay = document.getElementById("dropOverlay");
-const draggingFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+// A drag that starts inside this page (a result on its way to a folder or a chat) carries a file as well, but it
+// is not incoming: it gets a mark that only this page knows, so another FileForge window still takes the drop.
+const OWN_DRAG = `application/x-fileforge-${Math.random().toString(36).slice(2)}`;
+document.addEventListener("dragstart", (e) => { try { e.dataTransfer?.setData(OWN_DRAG, "1"); } catch (_) { /* ignore */ } }, true);
+const draggingFiles = (e) => { const types = [...(e.dataTransfer?.types || [])]; return types.includes("Files") && !types.includes(OWN_DRAG); };
 let dragDepth = 0;
 document.addEventListener("dragenter", (e) => { if (!draggingFiles(e)) return; dragDepth++; dropOverlay.hidden = false; });
 document.addEventListener("dragover", (e) => { if (!draggingFiles(e)) return; e.preventDefault(); ui.dropzone?.classList.add("over"); });
@@ -650,12 +720,54 @@ function restoreOptions() {
     input.dispatchEvent(new Event("change", { bubbles: true }));
   }
   ui.options.append(el("button", { class: "link small", type: "button", text: "Reset options to defaults", onclick: () => {
+    if (state.busy) return; // the running job is reading these very fields
     try { localStorage.removeItem(optionsKey()); } catch (_) { /* ignore */ }
-    refresh();
+    refresh({ fresh: true });
   } }));
 }
 
-function refresh() {
+// The options are rebuilt whenever the file list changes. Dropdowns and numbers come back from the remembered
+// options; a text the user typed into a field that is not remembered (a rename pattern, find and replace, page
+// ranges, a start time) would be gone. For tools that take many files those fields are carried over: only the
+// ones really typed in, so a default that follows the files still follows them. Not for one-file tools (a new
+// file there is a new job) and not where the tool keeps its own state (data-noremember on the whole panel).
+const isTypedField = (input) => (input.type === "text" || input.type === "number") && !rememberable(input);
+function typedFields() {
+  const seen = new Map(), out = [];
+  for (const input of ui.options.querySelectorAll("input")) {
+    if (!isTypedField(input)) continue;
+    const name = optionName(input);
+    if (!name) continue;
+    const nth = seen.get(name) || 0;
+    seen.set(name, nth + 1);
+    out.push({ input, key: `${name}#${nth}` });
+  }
+  return out;
+}
+function typedOptions() {
+  if (!state.tool || state.tool.multiple === false || ui.options.hasAttribute("data-noremember")) return new Map();
+  return new Map(typedFields().filter((x) => x.input.dataset.edited).map((x) => [x.key, x.input.value]));
+}
+function retypeOptions(kept) {
+  if (!kept.size) return;
+  for (const { input, key } of typedFields()) {
+    if (!kept.has(key)) continue;
+    input.value = kept.get(key);
+    input.dataset.edited = "1";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+}
+
+/** After the file list was rebuilt: the focus goes back to the same button of row `i` (or one that is enabled). */
+function focusRow(i, act) {
+  const row = ui.fileList.querySelectorAll("li")[i];
+  if (!row) { ui.dropzone?.focus(); return; }
+  (row.querySelector(`[data-act="${act}"]:not(:disabled)`) || row.querySelector("[data-act]:not(:disabled)"))?.focus();
+}
+
+/** Redraw the file list, the options and the results. `fresh`: the options start over (Clear, Reset). */
+function refresh({ fresh = false } = {}) {
   const tool = state.tool;
   const hasFiles = state.files.length > 0;
   ui.dropzone?.classList.toggle("compact", hasFiles); // the big target has done its job; leave a slim "add more" bar
@@ -668,17 +780,20 @@ function refresh() {
       const thumb = thumbFor(f);
       const info = el("span", { class: "file-info" });
       preview(f).then((p) => { info.textContent = p.info; });
+      const acts = el("span", { class: "file-actions" });
       const row = el("li", { draggable: orderable ? "true" : null, "data-index": String(i) }, [
         orderable ? el("span", { class: "grip", title: "Drag to reorder", text: "⋮⋮" }) : null,
         thumb,
-        el("span", { class: "file-name", text: f.name, title: f.name }),
-        info,
-        el("span", { class: "file-size", text: formatBytes(f.size) }),
+        el("span", { class: "file-text" }, [
+          el("span", { class: "file-name", text: f.name, title: f.name }),
+          el("span", { class: "file-meta" }, [el("span", { class: "file-size", text: formatBytes(f.size) }), info]),
+        ]),
+        acts,
       ]);
       if (orderable) {
-        row.append(
-          el("button", { class: "icon", type: "button", title: "Move up", text: "↑", disabled: i === 0, onclick: () => move(i, -1) }),
-          el("button", { class: "icon", type: "button", title: "Move down", text: "↓", disabled: i === state.files.length - 1, onclick: () => move(i, 1) }),
+        acts.append(
+          el("button", { class: "icon", type: "button", title: "Move up", text: "↑", "data-act": "up", disabled: i === 0, onclick: () => move(i, -1) }),
+          el("button", { class: "icon", type: "button", title: "Move down", text: "↓", "data-act": "down", disabled: i === state.files.length - 1, onclick: () => move(i, 1) }),
         );
         row.addEventListener("dragstart", (e) => { dragFrom = i; e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); row.classList.add("dragging"); });
         row.addEventListener("dragend", () => { row.classList.remove("dragging"); list.querySelectorAll(".drop-before, .drop-after").forEach((n) => n.classList.remove("drop-before", "drop-after")); });
@@ -699,9 +814,14 @@ function refresh() {
           dragFrom = null; state.results = []; refresh();
         });
       }
-      row.append(el("button", { class: "icon", type: "button", title: "Remove", "aria-label": "Remove", onclick: () => { state.files.splice(i, 1); state.results = []; refresh(); } }, [icon("close", 14)]));
+      acts.append(el("button", { class: "icon", type: "button", title: "Remove", "aria-label": "Remove", "data-act": "remove", onclick: () => { state.files.splice(i, 1); state.results = []; refresh(); focusRow(Math.min(i, state.files.length - 1), "remove"); } }, [icon("close", 14)]));
       list.append(row);
     });
+    // A long list scrolls inside its own box, under a line that says how much is in it.
+    if (state.files.length > 8) {
+      list.classList.add("long");
+      ui.fileList.append(el("div", { class: "files-head stat", text: `${plural(state.files.length, "file")} · ${formatBytes(state.files.reduce((s, f) => s + f.size, 0))}` }));
+    }
     ui.fileList.append(list);
     if (orderable) {
       const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -717,10 +837,12 @@ function refresh() {
   ui.options.hidden = !showControls;
   ui.actions.hidden = !showControls;
   if (showControls) {
+    const kept = fresh ? new Map() : typedOptions();
     ui.options.replaceChildren();
     try {
       tool.renderOptions(ui.options, state.files);
       restoreOptions();
+      retypeOptions(kept);
     } catch (err) {
       console.error(err);
       toast(err.message || String(err), "error");
@@ -746,6 +868,7 @@ function move(i, delta) {
   [state.files[i], state.files[j]] = [state.files[j], state.files[i]];
   state.results = [];
   refresh();
+  focusRow(j, delta < 0 ? "up" : "down");
 }
 
 const COPYABLE_TEXT = /^(text\/|application\/(json|manifest\+json|xml))/;
@@ -783,12 +906,33 @@ async function saveToFolder(results) {
   toast(t("Saved {files} to {folder}", { files: plural(results.length, "file"), folder: dir.name }));
 }
 
+/** Two inputs with the same stem (photo.jpg, photo.png) must not both become photo.webp. */
+function uniqueNames(results) {
+  const seen = new Set();
+  for (const r of results) {
+    let name = r.name, k = 2;
+    const dot = name.lastIndexOf("."), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+    while (seen.has(name.toLowerCase())) name = `${stem} (${k++})${ext}`;
+    seen.add(name.toLowerCase()); r.name = name;
+  }
+  return results;
+}
+
 function renderResults() {
   ui.results.replaceChildren();
   ui.results.hidden = state.results.length === 0;
   if (!state.results.length) return;
-  const total = state.results.reduce((s, r) => s + r.blob.size, 0);
-  ui.results.append(el("h2", {}, [icon("check", 18), el("span", { text: t("Done · {files}", { files: plural(state.results.length, "file") }) }), el("span", { class: "stat", text: formatBytes(total) })]));
+  const total = state.results.reduce((s, r) => s + r.blob.size, 0), many = state.results.length > 1;
+  // What the user came for goes first: with several results, "Download all" sits in the heading, not under a long list.
+  const headActions = el("div", { class: "actions" });
+  ui.results.append(el("div", { class: "results-head" }, [
+    el("h2", {}, [
+      icon("check", 18), el("span", { text: t("Done · {files}", { files: plural(state.results.length, "file") }) }),
+      many ? el("span", { class: "stat", text: formatBytes(total) }) : null,
+      state.saved ? el("span", { class: "saved-hint", text: "Saved to your downloads folder" }) : null,
+    ]),
+    headActions,
+  ]));
   const list = el("ul", { class: "files results-list" });
   const canCopy = (r) => navigator.clipboard && ((r.blob.type.startsWith("image/") && "ClipboardItem" in window && r.blob.type !== "image/svg+xml") || COPYABLE_TEXT.test(r.blob.type));
   for (const r of state.results) {
@@ -807,30 +951,34 @@ function renderResults() {
       thumb,
       el("span", { class: "file-name", text: r.name, title: r.name }),
       el("span", { class: "file-size", text: formatBytes(r.blob.size) }),
-      r.note ? el("span", { class: "file-note", text: r.note }) : null,
+      r.note ? el("span", { class: `file-note${/^[−-]\d/.test(r.note) ? " good" : ""}`, text: r.note }) : null,
       el("span", { class: "file-actions" }, [
         PREVIEWABLE(r) ? el("button", { type: "button", class: "icon", title: "Preview", "aria-label": "Preview", onclick: () => previewResult(r) }, [icon("eye", 16)]) : null,
         canCopy(r) ? el("button", { type: "button", class: "icon", title: "Copy to the clipboard", "aria-label": "Copy", onclick: () => copyResult(r).catch((err) => toast(t("Could not copy: {error}", { error: err.message }), "error")) }, [icon("copy", 16)]) : null,
-        el("button", { type: "button", class: "small", onclick: () => download(r.blob, r.name) }, [icon("download", 14), t("Download")]),
+        el("button", { type: "button", class: many ? "small dl" : "primary dl", onclick: () => download(r.blob, r.name) }, [icon("download", many ? 14 : 16), t(state.saved ? "Download again" : "Download")]),
       ]),
     ].filter(Boolean));
   }
   ui.results.append(list);
   const actions = el("div", { class: "actions" });
-  if (state.results.length > 1) {
-    actions.append(el("button", { class: "primary", type: "button", onclick: async () => {
+  if (many) {
+    headActions.append(el("button", { class: "primary", type: "button", onclick: async () => {
       try { download(await zipFiles(state.results), `fileforge-${state.tool.id}.zip`); }
       catch (err) { toast(err.message, "error"); }
     } }, [icon("download", 16), t("Download all (.zip)")]));
     // Chromium only: write every result straight into a folder the user picks, no archive to unpack.
-    if ("showDirectoryPicker" in window) actions.append(el("button", { type: "button", onclick: () => saveToFolder(state.results).catch((err) => { if (err.name !== "AbortError") toast(err.message, "error"); }) }, [icon("file", 16), t("Save all to a folder…")]));
+    if ("showDirectoryPicker" in window) headActions.append(el("button", { type: "button", onclick: () => saveToFolder(state.results).catch((err) => { if (err.name !== "AbortError") toast(err.message, "error"); }) }, [icon("file", 16), t("Save all to a folder…")]));
   }
   // Hand the results to another tool (crop → compress → watermark) without downloading and re-dropping them.
   const asFiles = state.results.map((r) => new File([r.blob], r.name, { type: r.blob.type || guessType(r.name), lastModified: Date.now() }));
   const next = tools.filter((x) => x.id !== state.tool.id && !x.filesOptional && asFiles.every((f) => accepts(x, f)) && (x.multiple !== false || asFiles.length === 1));
   if (next.length) {
-    const pick = el("select", { "aria-label": "Continue with" }, next.map((x) => el("option", { value: x.id, text: x.title })));
-    actions.append(el("span", { class: "stat", text: "Continue with" }), pick, el("button", { type: "button", text: "Open", class: "continue", onclick: () => {
+    // The likeliest next step first (favourites, recent, popular), not whatever comes first in the catalogue.
+    const liked = [...favIds(), ...recentIds(), ...POPULAR];
+    const rank = (x) => { const i = liked.indexOf(x.id); return i < 0 ? liked.length : i; };
+    next.sort((a, b) => rank(a) - rank(b));
+    const pick = el("select", { "aria-label": "Continue in" }, next.map((x) => el("option", { value: x.id, text: x.title })));
+    actions.append(el("span", { class: "stat", text: "Continue in" }), pick, el("button", { type: "button", text: "Open", class: "continue", onclick: () => {
       const files = asFiles;
       state.files = []; // the results replace the inputs
       history.replaceState(null, "", `${location.pathname}${location.search}#${pick.value}`);
@@ -847,56 +995,91 @@ function renderResults() {
 
 function makeProgress() {
   const ctrl = new AbortController();
-  const bar = ui.progress.querySelector(".progress-bar");
-  const text = ui.progress.querySelector(".progress-text");
+  // This job's own bar: `ui.progress` belongs to another tool once the user has moved on.
+  const box = ui.progress;
+  const bar = box.querySelector(".progress-bar");
+  const text = box.querySelector(".progress-text");
   return {
     signal: ctrl.signal, done: 0, total: 0,
-    start(total) { this.total = total; this.done = 0; bar.style.width = "0%"; text.textContent = ""; ui.progress.hidden = total < 2; },
+    start(total) { this.total = total; this.done = 0; bar.style.width = "0%"; text.textContent = ""; box.hidden = total < 2; },
     async tick(name) {
       if (ctrl.signal.aborted) throw new Error("Cancelled");
       const pct = this.total ? Math.round((this.done / this.total) * 100) : 0;
       bar.style.width = `${pct}%`;
-      ui.progress.setAttribute("aria-valuenow", String(pct));
+      box.setAttribute("aria-valuenow", String(pct));
       text.textContent = `${this.done + 1} / ${this.total}${name ? ` · ${name}` : ""}`;
       this.done++;
       await new Promise((r) => setTimeout(r, 0));
     },
     /** Detail inside one long step (the percent of a big file); Cancel stops it here too. */
     note(detail) { if (ctrl.signal.aborted) throw new Error("Cancelled"); text.textContent = detail; },
-    cancel() { ctrl.abort(); text.textContent = t("Cancelling…"); },
+    cancel() { ctrl.abort(); box.hidden = false; text.textContent = t("Cancelling…"); },
   };
+}
+
+/** While a job runs, the file list and the drop target are frozen: the tool is working through that very list. */
+function lockInputs() {
+  for (const n of [ui.fileList, ui.dropzone]) {
+    if (!n) continue;
+    n.inert = state.busy;
+    n.style.opacity = state.busy ? "0.6" : "";
+  }
+}
+
+function finishRun() {
+  state.busy = false;
+  state.progress = null;
+  if (ui.runBtn) {
+    ui.runBtn.disabled = false;
+    ui.runBtn.textContent = state.runLabel;
+    ui.cancelBtn.hidden = true;
+    ui.progress.hidden = true;
+  }
+  lockInputs();
+}
+
+/** Stop the running job, if any, and disown it: it ends at its next step and whatever it returns is ignored.
+ *  Called when its tool is left (another tool, the home page) or its files are cleared. */
+function stopRun() {
+  if (!state.busy) return;
+  state.progress?.cancel();
+  state.runId++;
+  finishRun();
+  toast("Cancelled");
 }
 
 async function run() {
   if (state.busy || !state.tool) return;
   const tool = state.tool;
   if (!state.files.length && !tool.filesOptional) return;
+  const id = ++state.runId;
   state.busy = true;
   ui.runBtn.disabled = true;
-  const label = ui.runBtn.textContent;
+  state.runLabel = ui.runBtn.textContent;
   ui.runBtn.textContent = t("Working…");
   const progress = makeProgress();
   state.progress = progress;
   progress.start(state.files.length);
-  ui.cancelBtn.hidden = state.files.length < 2;
+  ui.cancelBtn.hidden = false; // one file can be a long job too: a 300-page PDF, a video
+  lockInputs();
   try {
-    const results = await tool.run(state.files, ui.options, progress);
-    state.results = results || [];
+    // A copy of the list: nothing that happens to it meanwhile reaches the job.
+    const results = await tool.run([...state.files], ui.options, progress);
+    if (id !== state.runId) return; // stopped meanwhile: these results are nobody's
+    if (progress.signal.aborted) throw new Error("Cancelled"); // Cancel was pressed during the last step
+    state.results = uniqueNames(results || []);
+    state.saved = state.results.length === 1 && !tool.noAutoDownload && settings.autoDownload;
     renderResults();
     if (state.results.length) {
-      ui.results.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      if (state.results.length === 1 && !tool.noAutoDownload && settings.autoDownload) download(state.results[0].blob, state.results[0].name);
+      ui.results.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (state.saved) download(state.results[0].blob, state.results[0].name);
     }
   } catch (err) {
+    if (id !== state.runId) return;
     if (err.message === "Cancelled") toast("Cancelled");
     else { console.error(err); toast(err.message || String(err), "error"); }
   } finally {
-    state.busy = false;
-    state.progress = null;
-    ui.runBtn.disabled = false;
-    ui.runBtn.textContent = label;
-    ui.cancelBtn.hidden = true;
-    ui.progress.hidden = true;
+    if (id === state.runId) finishRun();
   }
 }
 
@@ -931,17 +1114,18 @@ function toolsFor(files) {
 }
 
 function openWith(id, files) {
-  if (id !== state.tool?.id) { history.replaceState(null, "", `${location.pathname}${location.search}#${id}`); mount(); }
+  // A new history entry: Back returns to the page the files were dropped on instead of leaving the app.
+  if (id !== state.tool?.id) { history.pushState(null, "", `${location.pathname}${location.search}#${id}`); mount(); }
   addFiles(files);
 }
 
 /** Files that arrived with no tool open (dropped on the home page, "Open with"): ask which tool should take them. */
 async function openFiles(files) {
-  files = await expandFiles(files.map(withType), null);
+  files = await expandFiles(files.map(typedFile), null);
   if (!files.length) return;
   const list = toolsFor(files);
   if (!list.length) { toast(t("No tool takes {name}", { name: files[0].name }), "error"); return; }
-  if (list.length === 1 || palette.open) { openWith(list[0].id, files); return; }
+  if (list.length === 1 || palette.open) { if (palette.open) palette.close(); openWith(list[0].id, files); return; }
   openPalette({ files, tools: list });
 }
 
@@ -950,8 +1134,15 @@ async function loadFromSrc() {
   const src = params.get("src");
   if (params.get("note") === "embedded") toast("That image is embedded in the page and could not be read. Save it and drop it here instead.", "error");
   if (params.get("note") === "shot") toast("This page cannot be captured. Browser pages (settings, the extension store, the new tab page) are off limits to extensions.", "error");
+  // Text handed over by the extension (a page address for the QR tool): into the tool's first text box.
+  const text = params.get("text");
+  if (text) {
+    const box = ui.options?.querySelector("textarea, input[type=text]");
+    if (box) { box.value = text; box.dispatchEvent(new Event("input", { bubbles: true })); }
+  }
+  // Shown or taken once: none of it belongs in the address, where a reload would repeat it.
+  if (src || text || params.has("note")) history.replaceState(null, "", location.pathname + (sideView ? "?view=side" : "") + location.hash);
   if (!src) return;
-  history.replaceState(null, "", location.pathname + (sideView ? "?view=side" : "") + location.hash);
   try {
     let url = src, name = "file";
     if (src.startsWith("handoff:")) {
@@ -991,13 +1182,31 @@ window.addEventListener("paste", (e) => {
   if (files.length) addFiles(files);
 });
 window.addEventListener("beforeunload", (e) => { if (settings.confirmLeave && state.files.length && !sideView) { e.preventDefault(); e.returnValue = ""; } });
+// "Skip to the tool" moves the focus; as a plain #main link it would count as a tool that does not exist.
+document.querySelector(".skip-link")?.addEventListener("click", (e) => { e.preventDefault(); main.focus(); });
+// A link with ?tool=crop (how the extension opens the app) becomes #crop: the address then follows the tool like any
+// other, and "All tools" really leads home.
+{
+  const params = new URLSearchParams(location.search);
+  const tool = params.get("tool");
+  if (tool) {
+    params.delete("tool");
+    const rest = params.toString();
+    history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : "") + (location.hash || `#${tool}`));
+  }
+}
 mount();
 loadFromSrc();
 
 // In the side panel the background script hands over context-menu requests ("Edit image in FileForge") instead of
 // opening a tab: one waits in `pending` while the panel loads, later ones arrive as messages.
+let panelWindow = null; // the window this panel is in, once the background script has said so
+let lastRequest = null;
+const forThisPanel = (req) => req?.windowId == null || panelWindow == null || req.windowId === panelWindow;
 function openRequested(req) {
-  if (!req?.tool) return;
+  if (!req?.tool || !forThisPanel(req)) return;
+  if (req.id && req.id === lastRequest) return; // the same request arriving a second way
+  lastRequest = req.id || null;
   const p = new URLSearchParams(req.params || {});
   p.set("view", "side");
   history.replaceState(null, "", `${location.pathname}?${p}#${req.tool}`);
@@ -1006,10 +1215,18 @@ function openRequested(req) {
   loadFromSrc();
 }
 if (isExtension && sideView) {
-  ext.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg?.type !== "fileforge-open") return;
-    openRequested(msg);
-    sendResponse(true);
-  });
-  Promise.resolve(ext.runtime.sendMessage({ type: "fileforge-pending" })).then(openRequested).catch(() => {});
+  (async () => {
+    // First what was waiting while the panel loaded (with it comes the id of this panel's window), then messages.
+    let first = null;
+    try { first = await ext.runtime.sendMessage({ type: "fileforge-pending" }); } catch (_) { /* nobody answered */ }
+    panelWindow = first?.windowId ?? null;
+    // Firefox has no such answer, but there a sidebar's "current window" is its own (in Chrome it is the last focused one).
+    if (panelWindow == null && ext.sidebarAction) { try { panelWindow = (await ext.windows.getCurrent()).id; } catch (_) { /* take every request */ } }
+    ext.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg?.type !== "fileforge-open" || !forThisPanel(msg)) return; // not ours: leave it unanswered
+      openRequested(msg);
+      sendResponse(true);
+    });
+    openRequested(first?.open);
+  })();
 }

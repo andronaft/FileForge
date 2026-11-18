@@ -277,9 +277,15 @@ const idPhotoTool = {
     const preset = select(ID_PRESETS.map((p) => [p.id, p.label]), "35x45");
     const cw = number(35, { min: 10, max: 200, step: "0.5" }), ch = number(45, { min: 10, max: 200, step: "0.5" });
     const customRow = el("div", { class: "row" }, [field("Width (mm)", cw), field("Height (mm)", ch)]);
-    const sheet = select([["10x15", "Print sheet 10 × 15 cm (photo paper, JPEG)"], ["a4", "Print sheet A4 (PDF)"], ["single", "One photo (JPEG)"]], "10x15");
+    const sheet = select([["10x15", "Print sheet 10 × 15 cm (photo paper, JPEG)"], ["a4", "Print sheet A4 (PDF)"], ["single", "One photo (JPEG)"], ["online", "For an online form: exact pixels, size limit"]], "10x15");
     const dpi = select([["300", "300 dpi"], ["600", "600 dpi"]], "300");
     const cut = checkbox("Thin cut lines", true);
+    // Online applications ask for pixels and kilobytes, not millimetres: "600 × 600 px, up to 240 KB".
+    const pxW = number(600, { min: 100, max: 4000, step: "1" }), maxKb = number(500, { min: 10, step: "10", placeholder: "no limit" });
+    const dpiField = field("Resolution", dpi);
+    const onlineRow = el("div", { class: "row", hidden: true }, [field("Width (px)", pxW, "The height follows the photo size chosen above"), field("File up to (KB)", maxKb)]);
+    const syncOut = () => { const on = sheet.value === "online"; onlineRow.hidden = !on; dpiField.hidden = on; cut.label.hidden = on || sheet.value === "single"; };
+    sheet.addEventListener("change", syncOut); setTimeout(syncOut, 0); // also after the remembered options are restored
     const canvas = el("canvas");
     const stage = el("div", { class: "crop-stage" }, [canvas]);
     const info = el("div", { class: "stat" });
@@ -287,10 +293,10 @@ const idPhotoTool = {
       el("div", { class: "row" }, [field("Photo size", preset)]), customRow,
       stage,
       el("div", { class: "stat", text: "Drag the frame to move it, drag a corner to resize. Fit the top of the head and the chin between the two dashed lines." }),
-      el("div", { class: "row" }, [field("Output", sheet), field("Resolution", dpi), cut.label]),
+      el("div", { class: "row" }, [field("Output", sheet), dpiField, cut.label]), onlineRow,
       info,
     );
-    this.opts = { preset, cw, ch, sheet, dpi, cut };
+    this.opts = { preset, cw, ch, sheet, dpi, cut, pxW, maxKb };
 
     const spec = () => {
       const p = ID_PRESETS.find((x) => x.id === preset.value) || ID_PRESETS[0];
@@ -310,10 +316,11 @@ const idPhotoTool = {
     const clamp = (f) => ({ ...f, x: Math.max(0, Math.min(f.x, st.w - f.w)), y: Math.max(0, Math.min(f.y, st.h - f.h)) });
     const describe = () => {
       const s = spec(), out = sheet.value;
-      const px = Math.round(s.w / MM_PER_IN * Number(dpi.value));
+      const px = out === "online" ? Number(pxW.value) || 600 : Math.round(s.w / MM_PER_IN * Number(dpi.value));
       const srcPx = st.frame ? Math.round(st.frame.w) : 0;
       let text = s.shown || t("{w} × {h} mm", { w: s.w, h: s.h });
-      if (out !== "single") { const l = sheetLayout(SHEETS[out], s.w, s.h); text += " · " + t("{n} per {sheet} sheet", { n: l.cols * l.rows, sheet: SHEETS[out].label }); }
+      if (out === "online") text += ` · ${px} × ${Math.round(px * s.h / s.w)} px`;
+      else if (out !== "single") { const l = sheetLayout(SHEETS[out], s.w, s.h); text += " · " + t("{n} per {sheet} sheet", { n: l.cols * l.rows, sheet: SHEETS[out].label }); }
       if (srcPx && srcPx < px * 0.6) text += " · " + t("the photo is low resolution for this size, prints may look soft");
       info.textContent = text;
     };
@@ -345,7 +352,7 @@ const idPhotoTool = {
     const corners = (f) => [[f.x, f.y], [f.x + f.w, f.y], [f.x, f.y + f.h], [f.x + f.w, f.y + f.h]];
     const sync = () => { customRow.hidden = preset.value !== "custom"; if (st.img) { fitFrame(true); draw(); } };
     preset.addEventListener("change", sync); cw.addEventListener("input", sync); ch.addEventListener("input", sync);
-    sheet.addEventListener("change", () => draw()); dpi.addEventListener("change", () => draw());
+    sheet.addEventListener("change", () => draw()); dpi.addEventListener("change", () => draw()); pxW.addEventListener("input", () => describe());
     customRow.hidden = true;
 
     this.ready = (async () => {
@@ -391,8 +398,9 @@ const idPhotoTool = {
     await this.ready;
     const st = this.state, o = this.opts;
     if (!st?.frame) throw new Error("Preview is not ready yet");
-    const s = this.spec(), dpi = Number(o.dpi.value) || 300;
-    const pxW = Math.round(s.w / MM_PER_IN * dpi), pxH = Math.round(s.h / MM_PER_IN * dpi);
+    const s = this.spec(), dpi = Number(o.dpi.value) || 300, online = o.sheet.value === "online";
+    const pxW = online ? Math.max(100, Math.round(Number(o.pxW.value) || 600)) : Math.round(s.w / MM_PER_IN * dpi);
+    const pxH = online ? Math.round(pxW * s.h / s.w) : Math.round(s.h / MM_PER_IN * dpi);
     const img = await loadImage(files[0]);
     const photo = makeCanvas(pxW, pxH);
     const g = photo.getContext("2d");
@@ -402,6 +410,14 @@ const idPhotoTool = {
     if (img.close) img.close();
     const size = s.tag || `${String(s.w).replace(".", "_")}x${String(s.h).replace(".", "_")}mm`;
     const base = baseName(files[0].name);
+    if (online) {
+      // Quality goes down only as far as the size limit needs.
+      const limit = (Number(o.maxKb.value) || 0) * 1024;
+      let blob = await toBlob(photo, "image/jpeg", 0.95);
+      for (let q = 0.9; limit && blob.size > limit && q >= 0.35; q -= 0.07) blob = await toBlob(photo, "image/jpeg", q);
+      const over = limit && blob.size > limit ? ` · ${t("still over {limit}", { limit: formatBytes(limit) })}` : "";
+      return [{ name: `${base}-${pxW}x${pxH}.jpg`, blob, note: `${pxW} × ${pxH} px · ${formatBytes(blob.size)}${over}` }];
+    }
     if (o.sheet.value === "single") {
       const blob = await toBlob(photo, "image/jpeg", 0.95);
       return [{ name: `${base}-${size}.jpg`, blob, note: `${pxW} × ${pxH} px · ${dpi} dpi` }];

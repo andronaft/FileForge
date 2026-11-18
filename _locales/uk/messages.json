@@ -12,7 +12,7 @@
     "message": "Відкрити FileForge"
   },
   "menuImage": {
-    "message": "Редагувати зображення у FileForge"
+    "message": "Редагувати зображення"
   },
   "menuPdf": {
     "message": "Відкрити PDF у FileForge"
@@ -31,5 +31,17 @@
   },
   "menuShotFull": {
     "message": "Знімок усієї сторінки"
+  },
+  "menuImageConvert": {
+    "message": "Конвертувати в JPG, PNG або WebP"
+  },
+  "menuImageOcr": {
+    "message": "Розпізнати текст на зображенні"
+  },
+  "menuImageQr": {
+    "message": "Зчитати QR-код"
+  },
+  "menuPageQr": {
+    "message": "QR-код для цієї адреси"
   }
 }

@@ -658,9 +658,25 @@ const watermarkTool = {
 
 // ---------- redact ----------
 
+/** Canvas `filter` is missing or inert in some browsers (Safari): a blur that does nothing must never pass for a redaction. */
+let filterOk = null;
+function canvasFilterWorks() {
+  if (filterOk !== null) return filterOk;
+  try {
+    const s = makeCanvas(9, 9), sg = s.getContext("2d");
+    sg.fillStyle = "#fff"; sg.fillRect(0, 0, 9, 9); sg.fillStyle = "#000"; sg.fillRect(4, 0, 1, 9);
+    const c = makeCanvas(9, 9), g = c.getContext("2d", { willReadFrequently: true });
+    g.fillStyle = "#fff"; g.fillRect(0, 0, 9, 9);
+    g.filter = "blur(2px)"; g.drawImage(s, 0, 0);
+    filterOk = g.getImageData(3, 4, 1, 1).data[0] < 250; // the black line has to bleed into the column next to it
+  } catch (_) { filterOk = false; }
+  return filterOk;
+}
+
 /** Paints the redaction boxes onto `canvas` in place. boxes: [{x, y, w, h}] in canvas pixels. */
 function applyRedactions(canvas, boxes, mode, strengthPct) {
   const ctx = canvas.getContext("2d");
+  if (mode === "blur" && !canvasFilterWorks()) mode = "pixelate";
   for (const b of boxes) {
     const x = Math.max(0, Math.round(b.x)), y = Math.max(0, Math.round(b.y));
     const w = Math.min(canvas.width - x, Math.round(b.w)), h = Math.min(canvas.height - y, Math.round(b.h));
@@ -674,14 +690,23 @@ function applyRedactions(canvas, boxes, mode, strengthPct) {
       ctx.drawImage(t, 0, 0, t.width, t.height, x, y, w, h);
       ctx.restore();
     } else {
-      // blur: draw the region into a temp canvas with a blur filter, then paint it back
-      const t = makeCanvas(w, h);
+      // Blur the box together with a margin of three sigma, then put back only the box. Nothing sharp may lie under
+      // the blurred copy: where a blur fades out (at its own edge, so also at the image edge) it must fade into a
+      // flat colour, never into the original pixels, or the text stays readable along the border of the box.
+      const sigma = px / 2, pad = Math.ceil(sigma * 3);
+      const sx = Math.max(0, x - pad), sy = Math.max(0, y - pad);
+      const sw = Math.min(canvas.width, x + w + pad) - sx, sh = Math.min(canvas.height, y + h + pad) - sy;
+      const one = makeCanvas(1, 1), og = one.getContext("2d", { willReadFrequently: true });
+      og.fillStyle = "#808080"; og.fillRect(0, 0, 1, 1);
+      og.imageSmoothingQuality = "high";
+      og.drawImage(canvas, x, y, w, h, 0, 0, 1, 1); // roughly the average colour of the box
+      const [ar, ag, ab] = og.getImageData(0, 0, 1, 1).data;
+      const t = makeCanvas(sw, sh);
       const tc = t.getContext("2d");
-      tc.drawImage(canvas, x, y, w, h, 0, 0, w, h);
-      tc.filter = `blur(${px / 2}px)`;
-      tc.drawImage(canvas, x, y, w, h, 0, 0, w, h);
-      tc.drawImage(canvas, x, y, w, h, 0, 0, w, h);
-      ctx.drawImage(t, x, y);
+      tc.fillStyle = `rgb(${ar}, ${ag}, ${ab})`; tc.fillRect(0, 0, sw, sh);
+      tc.filter = `blur(${sigma}px)`;
+      tc.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+      ctx.drawImage(t, x - sx, y - sy, w, h, x, y, w, h); // t is opaque, so this replaces the box outright
     }
   }
 }
@@ -1218,7 +1243,7 @@ const qrTool = {
       el("div", { class: "preview-wrap" }, [preview, info]),
     );
     const showRows = () => { for (const [k, r] of Object.entries(rows)) r.hidden = k !== kind.value; };
-    const esc = (s) => s.replace(/([\;,:"])/g, "\\$1");
+    const esc = (s) => s.replace(/([\\;,:"])/g, "\\$1");
     const payload = () => {
       switch (kind.value) {
         case "wifi": return ssid.value ? `WIFI:T:${enc.value};S:${esc(ssid.value)};${enc.value !== "nopass" ? `P:${esc(pass.value)};` : ""}${hidden.input.checked ? "H:true;" : ""};` : "";

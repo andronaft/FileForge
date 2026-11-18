@@ -26,7 +26,12 @@ export function describeCode(text) {
     return { kind: "Wi-Fi network", rows: [["Network", get("S")], ["Password", get("P")], ["Security", get("T") || "none"]].filter((r) => r[1]) };
   }
   if (/^https?:\/\//i.test(s) && !/\s/.test(s)) return { kind: "Link", url: s };
-  if (/^mailto:/i.test(s)) return { kind: "E-mail", rows: [["To", decodeURIComponent(s.slice(7).split("?")[0])]] };
+  if (/^mailto:/i.test(s)) {
+    const to = s.slice(7).split("?")[0];
+    let plain = to;
+    try { plain = decodeURIComponent(to); } catch (_) { /* a stray "%": show the address as it is written */ }
+    return { kind: "E-mail", rows: [["To", plain]] };
+  }
   if (/^(tel|sms|smsto):/i.test(s)) return { kind: "Phone", rows: [["Number", s.replace(/^\w+:/, "").split(/[:?]/)[0]]] };
   if (/^geo:/i.test(s)) return { kind: "Location", rows: [["Coordinates", s.slice(4).split("?")[0]]] };
   if (/^BEGIN:VCARD/i.test(s) || /^MECARD:/i.test(s)) {
@@ -77,16 +82,19 @@ const qrReadTool = {
   renderOptions(root, files) {
     const box = el("div", { class: "qr-results" });
     root.append(box);
-    this.found = [];
+    // Each render reads into its own list. A render that was replaced (a picture added or removed while another was
+    // still being read) stops at the next file, and what it had found never reaches the list that gets saved.
+    const found = this.found = [];
     this.ready = (async () => {
       for (const file of files) {
+        if (this.found !== found) return;
         const card = el("div", { class: "qr-card" }, [el("div", { class: "stat", text: `${file.name}: ${t("Reading…")}` })]);
         box.append(card);
         let codes = [];
         try { codes = await readCodes(file); } catch (err) { card.replaceChildren(el("div", { class: "stat bad", text: `${file.name}: ${err.message}` })); continue; }
         if (!codes.length) { card.replaceChildren(el("div", { class: "stat bad", text: `${file.name}: ${t("no QR code or barcode found. Crop closer to the code, or use a sharper picture.")}` })); continue; }
         card.replaceChildren(...codes.map((code) => {
-          this.found.push({ file: file.name, ...code });
+          found.push({ file: file.name, ...code });
           const info = describeCode(code.text);
           const value = el("textarea", { readonly: true, spellcheck: "false", rows: Math.min(8, Math.max(1, code.text.split("\n").length)), class: "qr-text" });
           value.value = code.text;
@@ -157,16 +165,24 @@ const audioTool = {
     for (const file of files) {
       await progress?.tick(file.name);
       if (file.size > 1.5 * 1024 ** 3) throw new Error(t("{name} is too big to decode in the browser (over 1.5 GB)", { name: file.name }));
+      const bytes = await file.arrayBuffer(); // a failure to read the file is reported as that, not as "no sound"
       let audio;
-      try { audio = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(await file.arrayBuffer()); }
-      catch (_) { throw new Error(t("{name} has no sound track the browser can decode", { name: file.name })); }
+      try { audio = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(bytes); }
+      catch (err) {
+        // The browser gives the same EncodingError for a file without sound and for sound that does not fit in memory
+        // once decoded (an hour of stereo is 1.3 GB). Only a small file is certain to be the first case.
+        if (file.size < 8 * 1024 ** 2 && (!err?.name || err.name === "EncodingError")) throw new Error(t("{name} has no sound track the browser can decode", { name: file.name }));
+        throw new Error(t("{name} could not be decoded: it has no sound track the browser understands, or the recording is too long for this device's memory", { name: file.name }));
+      }
       const rate = audio.sampleRate;
       const from = Math.max(0, Math.min(audio.length, Math.round((Number(o.start.value) || 0) * rate)));
       const to = Math.max(from, Math.min(audio.length, o.end.value ? Math.round(Number(o.end.value) * rate) : audio.length));
       if (to - from < rate / 10) throw new Error(t("Nothing left of {name} between that start and end", { name: file.name }));
       const src = Array.from({ length: audio.numberOfChannels }, (_, c) => audio.getChannelData(c).subarray(from, to));
       const n = to - from, chCount = o.mono.input.checked || src.length === 1 ? 1 : 2;
-      const pcm = Array.from({ length: chCount }, () => new Int16Array(n));
+      let pcm;
+      try { pcm = Array.from({ length: chCount }, () => new Int16Array(n)); }
+      catch (_) { throw new Error(t("{name} is too long to convert in this device's memory: set Start and End to convert it in parts", { name: file.name })); }
       for (let i = 0; i < n; i++) {
         if (chCount === 1) { let s = 0; for (const ch of src) s += ch[i]; s /= src.length; pcm[0][i] = Math.max(-32768, Math.min(32767, Math.round(s * 32767))); }
         else for (let c = 0; c < 2; c++) pcm[c][i] = Math.max(-32768, Math.min(32767, Math.round(src[c][i] * 32767)));

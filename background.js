@@ -17,14 +17,17 @@ function createMenus() {
       api.contextMenus.create({ id: "fileforge-tab", title: t("menuTab"), contexts: ["action"] });
     } catch (_) { /* a browser without the "action" menu context */ }
   }
+  // Several entries for one context are folded by the browser into a "FileForge" submenu.
   api.contextMenus.create({ id: "fileforge-image", title: t("menuImage"), contexts: ["image"] });
-  api.contextMenus.create({
-    id: "fileforge-pdf",
-    title: t("menuPdf"),
-    contexts: ["link", "page"],
-    targetUrlPatterns: ["*://*/*.pdf", "*://*/*.pdf?*", "*://*/*.PDF"],
-    documentUrlPatterns: ["*://*/*.pdf", "*://*/*.pdf?*", "*://*/*.PDF"],
-  });
+  api.contextMenus.create({ id: "fileforge-image-convert", title: t("menuImageConvert"), contexts: ["image"] });
+  api.contextMenus.create({ id: "fileforge-image-ocr", title: t("menuImageOcr"), contexts: ["image"] });
+  api.contextMenus.create({ id: "fileforge-image-qr", title: t("menuImageQr"), contexts: ["image"] });
+  // The address of the page or of a link as a QR code, to open it on a phone.
+  api.contextMenus.create({ id: "fileforge-page-qr", title: t("menuPageQr"), contexts: ["page", "link"] });
+  // Two entries, not one: an item with both pattern lists shows only where both match (a PDF link inside a PDF).
+  const PDF_URLS = ["*://*/*.pdf", "*://*/*.pdf?*", "*://*/*.PDF", "*://*/*.PDF?*"];
+  api.contextMenus.create({ id: "fileforge-pdf", title: t("menuPdf"), contexts: ["link"], targetUrlPatterns: PDF_URLS });
+  api.contextMenus.create({ id: "fileforge-pdf-page", title: t("menuPdf"), contexts: ["page"], documentUrlPatterns: PDF_URLS });
   // Screenshots of the page, opened in Annotate. The click grants activeTab for this one tab.
   api.contextMenus.create({ id: "fileforge-shot", title: t("menuShotVisible"), contexts: ["page", "action"] });
   api.contextMenus.create({ id: "fileforge-shot-full", title: t("menuShotFull"), contexts: ["page", "action"] });
@@ -35,11 +38,14 @@ function createMenus() {
 api.action.onClicked.addListener((tab) => { openApp(null, {}, tab); });
 
 // ---------- side panel ----------
-// Is FileForge currently open in the side panel / sidebar of this browser?
-async function panelOpen() {
+// Is FileForge currently open in the side panel / sidebar of the window the user is in (any window when unknown)?
+async function panelOpen(windowId) {
   try {
-    if (api.sidebarAction) return await api.sidebarAction.isOpen({});
-    if (api.runtime.getContexts) return (await api.runtime.getContexts({ contextTypes: ["SIDE_PANEL"] })).length > 0;
+    if (api.sidebarAction) return await api.sidebarAction.isOpen(windowId != null ? { windowId } : {});
+    if (api.runtime.getContexts) {
+      const panels = await api.runtime.getContexts({ contextTypes: ["SIDE_PANEL"] });
+      return windowId != null ? panels.some((c) => c.windowId === windowId) : panels.length > 0;
+    }
   } catch (_) { /* fall through */ }
   return false;
 }
@@ -67,28 +73,55 @@ function setPending(open) {
 
 // Embedded images (data:/blob: URLs) are too big for a URL, so they are parked here until the app tab asks for them.
 const handoff = new Map();
-api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// The window a side panel lives in. The panel cannot tell reliably itself (Chrome answers "the last focused window").
+async function senderWindow(sender) {
+  try {
+    if (sender?.tab?.windowId != null) return sender.tab.windowId;
+    if (sender?.documentId && api.runtime.getContexts) {
+      const [context] = await api.runtime.getContexts({ documentIds: [sender.documentId] });
+      if (context && context.windowId >= 0) return context.windowId;
+    }
+  } catch (_) { /* unknown */ }
+  return null;
+}
+api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg?.type === "fileforge-pull") {
     sendResponse(handoff.get(msg.id) || null);
     handoff.delete(msg.id);
   } else if (msg?.type === "fileforge-pending") {
-    sendResponse(pending);
-    pending = null;
+    // A panel that just loaded: tell it its window and hand over the request waiting for that window, if any.
+    // A panel in another window leaves the request for the one it was meant for.
+    senderWindow(sender).then((windowId) => {
+      const mine = pending && (pending.windowId == null || windowId == null || pending.windowId === windowId);
+      sendResponse({ windowId, open: mine ? pending : null });
+      if (mine) pending = null;
+    });
+    return true; // the answer comes later
   }
 });
 
 // Opens `tool` (null = the last used one) in the side panel when it is open or chosen, otherwise in a new tab.
 // `late`: the user's click was a while ago (a screenshot took seconds), so a closed panel can no longer be opened.
 async function openApp(tool, params = {}, tab, late = false) {
-  if ((await panelOpen()) || (!late && (await panelPreferred()))) {
-    const open = tool ? { tool, params } : null;
+  const windowId = tab?.windowId;
+  const wasOpen = await panelOpen(windowId);
+  if (wasOpen || (!late && (await panelPreferred()))) {
+    // `id` lets the panel drop a request it gets twice (as `pending` and as a message); `windowId` keeps a panel
+    // in another window from taking it.
+    const open = tool ? { tool, params, windowId, id: String(Date.now()) + Math.random().toString(36).slice(2) } : null;
     if (open) setPending(open);
-    try { await showPanel(tab); } catch (_) { /* no user gesture left or already open; the panel still picks up `pending` */ }
-    if (open) {
-      // Already open: hand the request over now. Still loading: it will ask for `pending` itself.
-      try { if (await api.runtime.sendMessage({ type: "fileforge-open", ...open })) pending = null; } catch (_) { /* nobody listening yet */ }
+    let shown = true;
+    try { await showPanel(tab); } catch (_) { shown = false; /* no user gesture left, or it is open already */ }
+    if (shown || wasOpen || (await panelOpen(windowId))) {
+      if (open) {
+        // Already open: hand the request over now. Still loading: it will ask for `pending` itself.
+        try { if (await api.runtime.sendMessage({ type: "fileforge-open", ...open })) pending = null; } catch (_) { /* nobody listening yet */ }
+      }
+      return;
     }
-    return;
+    // The panel is the default but closed, and the click is too old to open it (a permission prompt came in
+    // between): a tab is better than nothing happening.
+    if (pending === open) pending = null;
   }
   const url = new URL(APP_URL);
   if (tool) url.searchParams.set("tool", tool);
@@ -144,7 +177,20 @@ const MAX_HEIGHT = 30000; // device pixels; canvases stop at 32767
 
 /** The visible part of the tab, or the whole page scrolled through and stitched together. */
 async function capture(tab, full) {
-  const shot = () => api.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+  // Chrome allows two captures a second, counted in one-second windows: keep them 550 ms apart, and wait out a
+  // refusal once instead of losing the whole page.
+  let lastShot = 0;
+  const shot = async () => {
+    const wait = lastShot + 550 - Date.now();
+    if (wait > 0) await sleep(wait);
+    try { lastShot = Date.now(); return await api.tabs.captureVisibleTab(tab.windowId, { format: "png" }); }
+    catch (err) {
+      if (!/MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND/.test(String(err?.message || err))) throw err;
+      await sleep(1100);
+      lastShot = Date.now();
+      return api.tabs.captureVisibleTab(tab.windowId, { format: "png" });
+    }
+  };
   if (!full) return (await fetch(await shot())).blob();
   const run = async (func, args = []) => (await api.scripting.executeScript({ target: { tabId: tab.id }, func, args }))[0]?.result;
   const page = await run(() => {
@@ -156,7 +202,7 @@ async function capture(tab, full) {
   try {
     for (let y = 0; y < page.total && y * page.dpr < MAX_HEIGHT; y += page.h) {
       // From the second screen on, fixed and sticky bars (headers, cookie banners) are hidden so they appear once.
-      const at = await run((top, hide) => {
+      await run((top, hide) => {
         if (hide && !document.documentElement.dataset.ffShot) {
           document.documentElement.dataset.ffShot = "1";
           for (const n of document.querySelectorAll("body *")) {
@@ -164,17 +210,20 @@ async function capture(tab, full) {
             if (pos === "fixed" || pos === "sticky") { n.dataset.ffVis = n.style.visibility; n.style.visibility = "hidden"; }
           }
         }
-        scrollTo(0, top);
-        return scrollY;
+        // "instant": a page with `scroll-behavior: smooth` would otherwise still be on its way when it is captured.
+        scrollTo({ left: 0, top, behavior: "instant" });
       }, [y, y > 0]);
-      await sleep(y === 0 ? 150 : 450); // lazy images, and Chrome allows two captures a second
-      parts.push({ y: at, blob: await (await fetch(await shot())).blob() });
+      await sleep(y === 0 ? 150 : 300); // lazy images
+      // Where the page really is now (the last screen stops short of `y`, and a page may move itself).
+      const at = await run(() => scrollY);
+      try { parts.push({ y: typeof at === "number" ? at : y, blob: await (await fetch(await shot())).blob() }); }
+      catch (err) { if (!parts.length) throw err; break; } // keep what was captured so far
     }
   } finally {
     await run((x, y) => {
       for (const n of document.querySelectorAll("[data-ff-vis]")) { n.style.visibility = n.dataset.ffVis; delete n.dataset.ffVis; }
       delete document.documentElement.dataset.ffShot;
-      scrollTo(x, y);
+      scrollTo({ left: x, top: y, behavior: "instant" });
     }, [page.x, page.y]).catch(() => {});
   }
   const bitmaps = await Promise.all(parts.map((p) => createImageBitmap(p.blob)));
@@ -209,7 +258,12 @@ async function screenshot(tab, full) {
 api.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "fileforge-shot" || info.menuItemId === "fileforge-shot-full") screenshot(tab, info.menuItemId === "fileforge-shot-full");
   else if (info.menuItemId === "fileforge-image") openWith("crop", info.srcUrl, info, tab);
-  else if (info.menuItemId === "fileforge-pdf") openWith("pdf-split", info.linkUrl || info.pageUrl, info, tab);
+  else if (info.menuItemId === "fileforge-image-convert") openWith("convert", info.srcUrl, info, tab);
+  else if (info.menuItemId === "fileforge-image-ocr") openWith("ocr", info.srcUrl, info, tab);
+  else if (info.menuItemId === "fileforge-image-qr") openWith("qr-read", info.srcUrl, info, tab);
+  else if (info.menuItemId === "fileforge-page-qr") openApp("qr", { text: info.linkUrl || info.pageUrl || tab?.url || "" }, tab);
+  else if (info.menuItemId === "fileforge-pdf") openWith("pdf-split", info.linkUrl, info, tab);
+  else if (info.menuItemId === "fileforge-pdf-page") openWith("pdf-split", info.frameUrl || info.pageUrl, info, tab);
   else if (info.menuItemId === "fileforge-side") {
     try { await showPanel(tab); } catch (_) { /* ignore */ }
     try { await api.sidePanel?.setPanelBehavior({ openPanelOnActionClick: true }); } catch (_) { /* ignore */ }

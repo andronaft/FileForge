@@ -66,15 +66,23 @@ const CONVERTERS = {
   "img>img": "convert", "img>pdf": "images-to-pdf", "pdf>img": "pdf-to-images", "pdf>text": "pdf-to-text", "heic>img": "heic", "heic>pdf": "images-to-pdf",
   "xlsx>csv": "excel-read", "xlsx>json": "excel-read", "xlsx>html": "excel-read", "xlsx>md": "excel-read", "csv>xlsx": "excel-write", "json>xlsx": "excel-write", "html>xlsx": "excel-write", "md>xlsx": "excel-write",
   "docx>pdf": "word", "docx>html": "word", "docx>md": "word", "docx>text": "word",
-  "video>gif": "video-gif", "video>img": "video-frames", "video>audio": "audio-extract", "audio>audio": "audio-extract",
+  "img>gif": "images-to-gif", "video>gif": "video-gif", "video>img": "video-frames", "video>audio": "audio-extract", "audio>audio": "audio-extract",
   "svg>img": "svg-raster", "md>pdf": "md-to-pdf", "md>html": "md-to-html", "csv>json": "csv-json", "json>csv": "csv-json",
 };
+// "images from pdf", "pdf з фото", "jpg из pdf": with one of these between the two formats the source comes second.
+const FROM = new Set(["from", "з", "із", "зі", "из", "с"]);
+/** `words` is the whole query, small words included: they tell which of the two formats is the source. */
 function converterFor(words) {
-  const kinds = words.map((w) => {
+  const kinds = [];
+  words.forEach((w, at) => {
     const alts = alternatives(w);
-    return KINDS.find(([, re]) => alts.some((a) => re.test(a)))?.[0];
-  }).filter(Boolean);
-  return kinds.length === 2 ? CONVERTERS[kinds.join(">")] : undefined;
+    const kind = KINDS.find(([, re]) => alts.some((a) => re.test(a)))?.[0];
+    if (kind) kinds.push({ kind, at });
+  });
+  if (kinds.length !== 2) return undefined;
+  const [a, b] = kinds;
+  const reversed = words.slice(a.at + 1, b.at).some((w) => FROM.has(w));
+  return CONVERTERS[reversed ? `${b.kind}>${a.kind}` : `${a.kind}>${b.kind}`];
 }
 
 // The same keys on a QWERTY and on a Ukrainian (or Russian) keyboard.
@@ -134,7 +142,10 @@ export function createSearch(tools, describe) {
     return { tool, title, hay, tokens: [...new Set(hay.split(" "))] };
   });
 
-  function pass(words, fuzzy) {
+  function pass(q, fuzzy, any = false) {
+    const all = normalize(q).split(" ").filter(Boolean);
+    const meaningful = all.filter((w) => !STOP.has(w));
+    const words = meaningful.length ? meaningful : all;
     const wordAlts = words.map(alternatives);
     // A word is matched loosely only when no tool has it (or a synonym) as written.
     const loose = wordAlts.map((alts) => fuzzy && !index.some((e) => alts.some((a) => e.hay.includes(a))));
@@ -148,11 +159,11 @@ export function createSearch(tools, describe) {
           if (s) best = Math.max(best, s - (n ? 0.25 : 0)); // a synonym counts a little less than the word itself
         });
         if (!best && loose[i] && fuzzyHit(words[i], e.tokens)) best = 0.5;
-        if (best) score += best; else ok = false;
+        if (best) score += best; else if (!any) ok = false;
       }
-      if (ok) hits.push({ tool: e.tool, score });
+      if (ok && score) hits.push({ tool: e.tool, score });
     }
-    const converter = converterFor(words);
+    const converter = converterFor(all);
     if (converter) {
       const hit = hits.find((h) => h.tool.id === converter);
       if (hit) hit.score += 100;
@@ -161,21 +172,17 @@ export function createSearch(tools, describe) {
     return hits.sort((a, b) => b.score - a.score).map((h) => h.tool);
   }
 
-  function wordsOf(q) {
-    const all = normalize(q).split(" ").filter(Boolean);
-    const meaningful = all.filter((w) => !STOP.has(w));
-    return meaningful.length ? meaningful : all;
-  }
-
-  return function search(q) {
-    const words = wordsOf(q);
-    if (!words.length) return tools;
-    let hits = pass(words, false);
+  /** Tools that match at least one word of the query: for when nothing matches all of them. */
+  search.similar = (q) => (normalize(q) ? pass(q, true, true) : []);
+  return search;
+  function search(q) {
+    if (!normalize(q)) return tools;
+    let hits = pass(q, false);
     if (hits.length) return hits;
     const swapped = swapLayout(q);
-    if (swapped) { hits = pass(wordsOf(swapped), false); if (hits.length) return hits; }
-    hits = pass(words, true);
-    if (!hits.length && swapped) hits = pass(wordsOf(swapped), true);
+    if (swapped) { hits = pass(swapped, false); if (hits.length) return hits; }
+    hits = pass(q, true);
+    if (!hits.length && swapped) hits = pass(swapped, true);
     return hits;
-  };
+  }
 }

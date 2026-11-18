@@ -8,7 +8,7 @@ FileForge: image, PDF & file tools
 
 ## Summary (max 132 characters)
 
-51 image, PDF and text tools: crop, compress, convert, merge, split, redact, QR, diff, forms. 100% on your device, in EN/UK.
+75 image, PDF and file tools: crop, compress, convert, merge, split, redact, QR, diff, forms. 100% on your device, in EN/UK.
 
 ## Category
 
@@ -86,6 +86,10 @@ TEXT & DATA
 • Colour converter with tints, shades and a WCAG contrast checker
 • Rename files in bulk with patterns, counters, dates, find & replace and Latin-only names
 • Pipeline: chain tools (resize → adjust → watermark → compress) and run them on every file at once
+• Document pack: photos, scans and PDFs as one PDF under the size limit of an upload form (1, 2, 5, 10 MB)
+• Safe copy: write who a passport or ID copy is for across the whole page before you send it
+• Privacy check: what a photo, PDF, Word or Excel file gives away (location, author, comments, hidden sheets), and cleaned copies
+• Images to GIF; split a PDF into parts under a size limit; ID photos in exact pixels and KB for online applications
 
 EVERYDAY DETAILS
 • Batches show progress and can be cancelled; results download one by one, as a ZIP, copy to the clipboard, or go straight into the next tool
@@ -172,7 +176,7 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 ## Permission justifications
 
 - **activeTab**: lets "Screenshot the visible part" and "Screenshot the whole page" (right-click menu of a page or of the toolbar icon) capture the tab the user clicked in, once. Nothing is captured or read without that click, and no other tab is touched.
-- **contextMenus**: the "Edit image in FileForge" entry in the right-click menu of images, "Open PDF in FileForge" on PDF links and pages, and the two screenshot entries on pages.
+- **contextMenus**: the right-click entries. On images: "Edit image", "Convert to JPG, PNG or WebP", "Read the text in the image", "Read the QR code". On PDF links and pages: "Open PDF in FileForge". On pages and links: the two screenshot entries and "QR code for this address" (the address is turned into a QR code inside the extension, it is not sent anywhere).
 - **sidePanel**: shows the FileForge page in Chrome's side panel when the user picks "Open in side panel" or the ◨ button; the page is the extension's own, and the permission gives no access to web pages.
 - **scripting**: only used when "Edit image in FileForge" is chosen on an image that exists solely inside the page (a `blob:` URL, e.g. an image editor's canvas or a pasted screenshot). A one-line script runs in that tab, after the user granted that site, to read that one image's bytes. No content scripts are registered and nothing runs on pages the user did not pick.
 - **Optional host permissions (`<all_urls>`)**: requested for a single site, only when the user chooses one of those menu items there, so the extension can fetch that image or PDF. Never requested up front.

@@ -166,7 +166,7 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 - `contextMenus`:
 
   ```
-  Adds "Edit image in FileForge" to the right-click menu of images, "Open PDF in FileForge" to PDF links and pages, and "Screenshot the visible part" / "Screenshot the whole page" to pages. These menu items are the only way the extension touches a web page.
+  Adds right-click entries: on images "Edit image", "Convert to JPG, PNG or WebP", "Read the text in the image" and "Read the QR code"; on PDF links and pages "Open PDF in FileForge"; on pages and links "Screenshot the visible part", "Screenshot the whole page" and "QR code for this address" (the address is turned into a QR code inside the extension and is not sent anywhere). These menu items are the only way the extension touches a web page.
   ```
 
 - Host permission (`<all_urls>`, listed under optional host permissions):

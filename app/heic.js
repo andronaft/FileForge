@@ -1,4 +1,5 @@
 // HEIC/HEIF decoding shared by every image tool: libheif (WebAssembly) in a worker, so the page stays responsive.
+import { t } from "./i18n.js";
 
 export function isHeic(file) {
   return file.type === "image/heic" || file.type === "image/heif" || /\.hei[cf]$/i.test(file.name);
@@ -28,7 +29,7 @@ function heicWorker() {
     clearTimeout(p.timer);
     if (e.data.error) p.reject(new Error(e.data.error)); else p.resolve(e.data.images);
   };
-  worker.onerror = (e) => { e.preventDefault?.(); failAll("The HEIC decoder failed to start" + (e.message ? `: ${e.message}` : "")); };
+  worker.onerror = (e) => { e.preventDefault?.(); failAll(t("The HEIC decoder failed to start") + (e.message ? `: ${e.message}` : "")); };
   return worker;
 }
 
@@ -52,7 +53,8 @@ function send(file, all) {
     const w = heicWorker();
     const id = ++seq;
     const done = (fn) => (v) => { fn(v); setTimeout(pumpLow, 0); };
-    const timer = setTimeout(() => { pending.delete(id); failAll(`Decoding ${file.name} took too long`); }, TIMEOUT_MS);
+    // failAll rejects every waiting job, this one included, and restarts the worker.
+    const timer = setTimeout(() => failAll(t("Decoding {name} took too long", { name: file.name })), TIMEOUT_MS);
     pending.set(id, { resolve: done(resolve), reject: done(reject), timer });
     w.postMessage({ id, buffer, all }, [buffer]);
   }));

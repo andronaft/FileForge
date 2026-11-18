@@ -4,8 +4,9 @@ import { copyButton } from "./data.js";
 import { getLang } from "../i18n.js";
 import { qpdf, qpdfMessage, pdfLock, decryptPdf, PdfPasswordError } from "../qpdf.js";
 import { toBrowserImage } from "../heic.js";
+import { bareJpeg } from "./metadata.js";
 
-const { PDFDocument, PDFDict, PDFName, degrees, PageSizes, StandardFonts, rgb } = PDFLib;
+const { PDFDocument, PDFDict, PDFName, PDFRef, PDFArray, PDFStream, degrees, PageSizes, StandardFonts, rgb } = PDFLib;
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("../../vendor/pdf.worker.min.mjs", import.meta.url).href;
 
 // One pdf.js worker for the whole app. By default every getDocument() starts its own worker and loads the 1.4 MB
@@ -18,6 +19,115 @@ function pdfWorker() {
 /** Open PDF bytes with pdf.js on the shared worker. */
 function pdfjsOpen(data) {
   return pdfjsLib.getDocument({ data, isEvalSupported: false, worker: pdfWorker() }).promise;
+}
+
+// ---------- leaving nothing behind ----------
+// pdf-lib writes every object of a document, reachable or not: a removed page keeps its text in the file, and
+// copyPages() drags along whatever a page points at (the pages its links lead to, the whole form behind one field).
+// These helpers make "removed" mean removed.
+
+const N = (k) => PDFName.of(k);
+const PAGE_PAYLOAD = ["Contents", "Resources", "Annots", "Thumb", "B", "Metadata", "PieceInfo"];
+/** Empties a page object, so nothing of it is left even where something still points at it. */
+function gutPage(node) { for (const k of PAGE_PAYLOAD) node.delete(N(k)); }
+
+/** The annotation dictionaries of a page as [ref, dict] pairs. */
+function annotsOf(page) {
+  const ctx = page.doc.context, list = ctx.lookup(page.node.get(N("Annots")));
+  if (!(list instanceof PDFArray)) return [];
+  return list.asArray().map((ref) => [ref, ctx.lookup(ref)]).filter(([, d]) => d instanceof PDFDict);
+}
+
+/** Deletes every object the document no longer reaches from its trailer. Returns how many went. */
+function dropOrphans(doc) {
+  const ctx = doc.context, seen = new Set();
+  const stack = [ctx.trailerInfo.Root, ctx.trailerInfo.Info, ctx.trailerInfo.Encrypt, ctx.trailerInfo.ID].filter(Boolean);
+  while (stack.length) {
+    const o = stack.pop();
+    if (o instanceof PDFRef) { if (seen.has(o.tag)) continue; seen.add(o.tag); const v = ctx.lookup(o); if (v) stack.push(v); }
+    else if (o instanceof PDFStream) stack.push(o.dict);
+    else if (o instanceof PDFDict) for (const [, v] of o.entries()) stack.push(v);
+    else if (o instanceof PDFArray) for (const v of o.asArray()) stack.push(v);
+  }
+  let n = 0;
+  for (const [ref] of ctx.enumerateIndirectObjects()) if (!seen.has(ref.tag)) { ctx.delete(ref); n++; }
+  return n;
+}
+
+/** Removes form fields whose every widget sat on a deleted page (`gone` holds the tags of those pages' annotations). */
+function pruneFields(doc, gone) {
+  const ctx = doc.context, form = ctx.lookup(doc.catalog.get(N("AcroForm")));
+  if (!(form instanceof PDFDict) || !gone.size) return;
+  const dead = (ref) => {
+    const d = ref instanceof PDFRef ? ctx.lookup(ref) : null;
+    if (!(d instanceof PDFDict)) return false;
+    const kids = ctx.lookup(d.get(N("Kids")));
+    if (!(kids instanceof PDFArray)) return gone.has(ref.tag);
+    const keep = kids.asArray().filter((k) => !dead(k));
+    if (!keep.length && kids.size()) return true;
+    d.set(N("Kids"), ctx.obj(keep));
+    return false;
+  };
+  const fields = ctx.lookup(form.get(N("Fields")));
+  if (fields instanceof PDFArray) form.set(N("Fields"), ctx.obj(fields.asArray().filter((f) => !dead(f))));
+}
+
+/**
+ * Call right before save() wherever pages were removed or only some were copied. Empties page objects that are no
+ * longer in the page tree, cuts widgets loose from a form the document does not have, and drops what became unreachable.
+ */
+function sweepPdf(doc) {
+  const ctx = doc.context, live = new Set();
+  doc.catalog.Pages().traverse((node, ref) => { if (node.get(N("Type")) === N("Page")) live.add(ref.tag); });
+  for (const [ref, obj] of ctx.enumerateIndirectObjects()) {
+    if (obj instanceof PDFDict && obj.get(N("Type")) === N("Page") && !live.has(ref.tag)) gutPage(obj);
+  }
+  if (!doc.catalog.has(N("AcroForm"))) {
+    for (const page of doc.getPages()) for (const [, a] of annotsOf(page)) if (a.get(N("Subtype")) === N("Widget")) a.delete(N("Parent"));
+  }
+  return dropOrphans(doc);
+}
+
+// ---------- the page as it is seen ----------
+// A page can be turned (/Rotate) and cropped (CropBox), and its box need not start at 0,0. Tools that place something
+// "bottom right" or cut "the top margin" mean the page as the reader sees it, so they work through this view.
+
+/** Visible size of a page, its rotation, and at(x, y): a point of the view (origin bottom-left, y up) in page coordinates. */
+function pageView(page) {
+  const b = page.getCropBox(), r = ((page.getRotation().angle % 360) + 360) % 360;
+  const turned = r === 90 || r === 270;
+  return {
+    width: turned ? b.height : b.width, height: turned ? b.width : b.height, angle: r, box: b,
+    at(x, y) {
+      const [px, py] = r === 90 ? [b.width - y, x] : r === 180 ? [b.width - x, b.height - y] : r === 270 ? [y, b.height - x] : [x, y];
+      return { x: b.x + px, y: b.y + py };
+    },
+  };
+}
+
+/** Crops a page to a rectangle of its view (corners x0,y0 – x1,y1, origin bottom-left). */
+function cropToView(page, view, x0, y0, x1, y1) {
+  const a = view.at(x0, y0), c = view.at(x1, y1);
+  page.setCropBox(Math.min(a.x, c.x), Math.min(a.y, c.y), Math.abs(c.x - a.x), Math.abs(c.y - a.y));
+}
+
+/**
+ * Embeds every page of `src` into `doc` the way it is seen: cut to its crop box and turned upright. Returns
+ * [{ page, width, height }]; draw with drawPage(e.page, { x, y, xScale, yScale }) because pdf-lib does not know the
+ * turned size.
+ */
+async function embedSeen(doc, src) {
+  const pages = src.getPages(), views = pages.map(pageView);
+  // pdf-lib refuses pages with no content stream (blank pages): give them an empty one
+  for (const p of pages) if (!p.node.get(N("Contents"))) p.node.set(N("Contents"), src.context.register(src.context.stream("")));
+  const boxes = views.map(({ box: b }) => ({ left: b.x, bottom: b.y, right: b.x + b.width, top: b.y + b.height }));
+  const matrices = views.map(({ box: b, angle: r }) =>
+    r === 90 ? [0, -1, 1, 0, -b.y, b.x + b.width]
+      : r === 180 ? [-1, 0, 0, -1, b.x + b.width, b.y + b.height]
+        : r === 270 ? [0, 1, -1, 0, b.y + b.height, -b.x]
+          : [1, 0, 0, 1, -b.x, -b.y]);
+  const embedded = await doc.embedPages(pages, boxes, matrices);
+  return embedded.map((page, i) => ({ page, width: views[i].width, height: views[i].height }));
 }
 
 /** Render pages of a PDF file with pdf.js. Calls onPage(canvas, pageNumber, widthPt, heightPt). */
@@ -88,14 +198,15 @@ export async function pdfThumbnail(file, size) {
 }
 
 /** Page tiles for `indices`: the first screenful renders right away, the rest as they scroll into view. */
-function pageTiles(doc, grid, indices, width = 104) {
+function pageTiles(doc, grid, indices, width = 104, board = false) {
   const EAGER = 24;
   const paint = (t) => { const i = Number(t.dataset.page); renderThumb(doc, i, width).then((c) => { t.querySelector(".ph")?.replaceWith(c); }).catch(() => {}); };
   const io = new IntersectionObserver((entries) => {
     for (const e of entries) { if (!e.isIntersecting) continue; io.unobserve(e.target); paint(e.target); }
   }, { root: grid, rootMargin: "240px" });
   const tiles = indices.map((i, k) => {
-    const t = el("button", { type: "button", class: "page", "data-page": String(i), title: `Page ${i + 1}` }, [el("div", { class: "ph" }), el("span", { class: "page-n", text: String(i + 1) })]);
+    // On a board the tile holds buttons of its own (rotate, remove) and is dragged: a button may do neither everywhere.
+    const t = el(board ? "div" : "button", { ...(board ? { role: "listitem", tabindex: "0" } : { type: "button" }), class: "page", "data-page": String(i), title: `Page ${i + 1}` }, [el("div", { class: "ph" }), el("span", { class: "page-n", text: String(i + 1) })]);
     if (k < EAGER) paint(t); else io.observe(t);
     return t;
   });
@@ -187,7 +298,7 @@ async function loadPdf(file) {
     // updateMetadata: false keeps the file's own Info dictionary; pdf-lib would otherwise stamp its Producer and dates.
     doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
   } catch (err) {
-    throw new Error(`${file.name} is not a readable PDF (${err.message || err})`);
+    throw new Error(t("{name} is not a readable PDF ({error})", { name: file.name, error: err.message || err }));
   }
   if (!doc.isEncrypted) return doc;
   // pdf-lib cannot read encrypted content. A file that is only restricted (printing, copying) opens with an empty
@@ -279,21 +390,23 @@ const splitTool = {
   hint: "One PDF file",
   runLabel: "Split",
   renderOptions(root, files) {
-    const mode = select([["ranges", "Extract pages (e.g. 1-3, 7)"], ["each", "Every page as a separate PDF"], ["chunks", "Split every N pages"]], "ranges");
+    const mode = select([["ranges", "Extract pages (e.g. 1-3, 7)"], ["each", "Every page as a separate PDF"], ["chunks", "Split every N pages"], ["size", "Parts no larger than a size limit"]], "ranges");
     const ranges = el("input", { type: "text", placeholder: "1-3, 7, 10-12" });
     const chunk = number(1, { min: 1 });
+    const size = number(5, { min: 0.1, step: "0.1" });
     const rangesRow = el("div", { class: "row" }, [field("Pages", ranges)]);
     const chunkRow = el("div", { class: "row", hidden: true }, [field("Pages per file", chunk)]);
-    mode.addEventListener("change", () => { rangesRow.hidden = mode.value !== "ranges"; chunkRow.hidden = mode.value !== "chunks"; });
+    const sizeRow = el("div", { class: "row", hidden: true }, [field("Each part up to (MB)", size, "For upload forms and e-mail: the pages stay as they are, the document is cut where a part would grow past the limit")]);
+    mode.addEventListener("change", () => { rangesRow.hidden = mode.value !== "ranges"; chunkRow.hidden = mode.value !== "chunks"; sizeRow.hidden = mode.value !== "size"; });
     const info = el("div", { class: "stat", text: "Counting pages…" });
     const picker = el("div");
     mode.addEventListener("change", () => { picker.hidden = mode.value !== "ranges"; });
-    root.append(el("div", { class: "row" }, [field("Mode", mode)]), rangesRow, chunkRow, info, picker);
+    root.append(el("div", { class: "row" }, [field("Mode", mode)]), rangesRow, chunkRow, sizeRow, info, picker);
     pageCount(files[0]).then((n) => { info.textContent = `${files[0].name}: ${plural(n, "page")}`; this.total = n; }).catch((err) => { info.textContent = err.message; });
     closeDocs(); pagePicker(picker, files[0], ranges);
-    this.opts = { mode, ranges, chunk };
+    this.opts = { mode, ranges, chunk, size };
   },
-  async run(files) {
+  async run(files, _root, progress) {
     const file = files[0];
     const src = await loadPdf(file);
     const total = src.getPageCount();
@@ -303,6 +416,7 @@ const splitTool = {
       const doc = await PDFDocument.create();
       const pages = await doc.copyPages(src, indices);
       pages.forEach((p) => doc.addPage(p));
+      sweepPdf(doc);
       return { name, blob: pdfBlob(await doc.save()), note: plural(indices.length, "page") };
     };
     if (o.mode.value === "ranges") {
@@ -313,6 +427,32 @@ const splitTool = {
       const out = [];
       const pad = String(total).length;
       for (let i = 0; i < total; i++) out.push(await extract([i], `${base}-${String(i + 1).padStart(pad, "0")}.pdf`));
+      return out;
+    }
+    if (o.mode.value === "size") {
+      const limit = (Number(o.size.value) || 0) * 1024 * 1024;
+      if (!limit) throw new Error("Enter the size limit");
+      const range = (a, n) => Array.from({ length: n }, (_, k) => a + k);
+      const out = [];
+      // Page sizes are not additive (fonts and pictures are shared), so each part is built and measured: start from a
+      // guess by average page size, then take fewer pages until it fits, or more while there is clear room.
+      let guess = Math.max(1, Math.floor((total * limit) / file.size));
+      for (let start = 0; start < total;) {
+        await progress?.tick(t("part {n}", { n: out.length + 1 }));
+        let n = Math.min(guess, total - start), part = await extract(range(start, n), "");
+        while (part.blob.size > limit && n > 1) { n = Math.max(1, Math.min(n - 1, Math.floor((n * limit) / part.blob.size * 0.95))); part = await extract(range(start, n), ""); }
+        while (part.blob.size < limit * 0.7 && start + n < total) {
+          const more = Math.min(total - start, Math.max(n + 1, Math.floor((n * limit) / part.blob.size * 0.9)));
+          const bigger = await extract(range(start, more), "");
+          if (bigger.blob.size > limit) break;
+          n = more; part = bigger;
+        }
+        if (part.blob.size > limit) part.note = `${part.note} · ${t("one page alone is over {limit}", { limit: formatBytes(limit) })}`;
+        else part.note = `${part.note} · ${formatBytes(part.blob.size)}`;
+        out.push(part); start += n; guess = n;
+      }
+      const pad = String(out.length).length;
+      out.forEach((p, k) => { p.name = `${base}-part${String(k + 1).padStart(pad, "0")}.pdf`; });
       return out;
     }
     const n = Math.max(1, Number(o.chunk.value) || 1);
@@ -360,7 +500,7 @@ const rotatePdfTool = {
         const page = doc.getPage(i);
         page.setRotation(degrees((page.getRotation().angle + Number(o.angle.value)) % 360));
       }
-      out.push({ name: `${baseName(file.name)}-rotated.pdf`, blob: pdfBlob(await doc.save()), note: `${indices.length} of ${total} pages` });
+      out.push({ name: `${baseName(file.name)}-rotated.pdf`, blob: pdfBlob(await doc.save()), note: t("{n} of {total} pages", { n: indices.length, total }) });
     }
     return out;
   },
@@ -378,6 +518,21 @@ async function reencode(file, mime, quality) {
   bitmap.close();
   const blob = await new Promise((res) => c.toBlob(res, mime, quality));
   return new Uint8Array(await blob.arrayBuffer());
+}
+
+/**
+ * A picture file as a pdf-lib image. HEIC is decoded first; JPEGs go in as they are, minus the camera's EXIF block
+ * (GPS position, device, the thumbnail of the uncropped shot); rotated phone photos are re-encoded upright because
+ * pdf-lib embeds the raw file. With `jpeg`, everything else becomes a JPEG on white too, so it can be shrunk later.
+ */
+async function embedPicture(doc, file, { jpeg = false } = {}) {
+  file = await toBrowserImage(file);
+  if (file.type === "image/jpeg") {
+    const bytes = await file.arrayBuffer();
+    return doc.embedJpg(jpegOrientation(new Uint8Array(bytes)) === 1 ? bareJpeg(bytes) : await reencode(file, "image/jpeg", 0.92));
+  }
+  if (jpeg) return doc.embedJpg(await reencode(file, "image/jpeg", 0.92));
+  return doc.embedPng(file.type === "image/png" ? await file.arrayBuffer() : await reencode(file, "image/png"));
 }
 
 /** EXIF Orientation (1-8) of a JPEG, or 1 when there is none. */
@@ -430,14 +585,7 @@ const imagesToPdfTool = {
     const doc = await PDFDocument.create();
     for (let file of files) {
       await progress?.tick(file.name);
-      file = await toBrowserImage(file); // HEIC photos are decoded to JPEG first
-      let image;
-      if (file.type === "image/jpeg") {
-        const bytes = await file.arrayBuffer();
-        // pdf-lib embeds the raw JPEG, so a rotated phone photo has to be re-encoded upright first.
-        image = await doc.embedJpg(jpegOrientation(new Uint8Array(bytes)) === 1 ? bytes : await reencode(file, "image/jpeg", 0.92));
-      } else if (file.type === "image/png") image = await doc.embedPng(await file.arrayBuffer());
-      else image = await doc.embedPng(await reencode(file, "image/png"));
+      const image = await embedPicture(doc, file);
       const { width: iw, height: ih } = image;
       if (o.size.value === "fit") {
         const k = 72 / (Number(o.dpi.value) || 150);
@@ -504,17 +652,36 @@ const pdfToImagesTool = {
 // so 1700 px is roughly 150 dpi for a full-page scan.
 const SHRINK = { high: [2400, 0.82], medium: [1700, 0.7], low: [1200, 0.58], lowest: [850, 0.45] };
 const SHRINK_ORDER = ["high", "medium", "low", "lowest"];
+const SHRINK_LABEL = { high: "High quality", medium: "Balanced", low: "Small file", lowest: "Smallest file" };
 
 /**
  * Re-encode the JPEG pictures inside a PDF at a lower resolution and quality, in place. Text, fonts and vector
- * drawings are not touched. Returns how many pictures got smaller.
+ * drawings are not touched. Returns how many pictures got smaller and how many were worth trying.
  */
 async function shrinkImages(doc, maxSide, quality, gray, onImage) {
   const { PDFRawStream, PDFArray, PDFNumber } = PDFLib;
   const N = (k) => PDFName.of(k);
   const images = [];
+  // A picture used as another picture's soft mask must stay a one-channel image.
+  const masks = new Set();
   for (const [, obj] of doc.context.enumerateIndirectObjects()) {
+    const m = obj instanceof PDFRawStream ? obj.dict.get(N("SMask")) : null;
+    if (m instanceof PDFRef) masks.add(m.tag);
+  }
+  // Colour spaces a browser brings back faithfully as RGB. CMYK and spot colours would shift or invert.
+  const plainColour = (cs) => {
+    if (!cs) return true;
+    if (cs instanceof PDFName) return ["/DeviceRGB", "/DeviceGray", "/CalRGB", "/CalGray"].includes(String(cs));
+    if (!(cs instanceof PDFArray)) return false;
+    const kind = String(cs.lookup(0));
+    if (kind === "/CalRGB" || kind === "/CalGray") return true;
+    if (kind !== "/ICCBased") return false;
+    const profile = cs.lookup(1), n = profile?.dict?.lookup(N("N"));
+    return [1, 3].includes(n?.asNumber?.());
+  };
+  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
     if (!(obj instanceof PDFRawStream) || obj.dict.get(N("Subtype")) !== N("Image")) continue;
+    if (masks.has(ref.tag) || !plainColour(obj.dict.lookup(N("ColorSpace")))) continue;
     const filter = obj.dict.lookup(N("Filter"));
     const filters = filter instanceof PDFArray ? filter.asArray().map(String) : filter ? [String(filter)] : [];
     // Only plain JPEGs: masks, colour-key masks and inverted pictures would come out wrong after re-encoding.
@@ -527,7 +694,8 @@ async function shrinkImages(doc, maxSide, quality, gray, onImage) {
   for (const [n, obj] of images.entries()) {
     await onImage?.(n, images.length);
     let bmp;
-    try { bmp = await createImageBitmap(new Blob([obj.contents], { type: "image/jpeg" })); } catch (_) { continue; }
+    // Without its EXIF block: PDF viewers ignore the Orientation tag, the browser would apply it and turn the picture.
+    try { bmp = await createImageBitmap(new Blob([bareJpeg(obj.contents)], { type: "image/jpeg" })); } catch (_) { continue; }
     const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
     const c = document.createElement("canvas");
     c.width = Math.max(1, Math.round(bmp.width * k)); c.height = Math.max(1, Math.round(bmp.height * k));
@@ -546,7 +714,56 @@ async function shrinkImages(doc, maxSide, quality, gray, onImage) {
     obj.dict.delete(N("DecodeParms"));
     shrunk++;
   }
-  return shrunk;
+  return { shrunk, candidates: images.length };
+}
+
+/** Every page as a JPEG at `dpi`: the last resort, text stops being text. `paint(canvas)` may draw over each page first. */
+async function rasterisePdf(file, dpi, quality, gray, progress, paint) {
+  const doc = await PDFDocument.create();
+  await renderPages(file, dpi / 72, null, async (canvas, _n, wPt, hPt) => {
+    if (gray) {
+      const ctx = canvas.getContext("2d");
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) { const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = y; }
+      ctx.putImageData(img, 0, 0);
+    }
+    paint?.(canvas);
+    const jpg = await doc.embedJpg(await (await toBlob(canvas, "image/jpeg", quality)).arrayBuffer());
+    doc.addPage([wPt, hPt]).drawImage(jpg, { x: 0, y: 0, width: wPt, height: hPt });
+  }, progress);
+  return pdfBlob(await doc.save());
+}
+
+/**
+ * Smart compression of one PDF file: pictures are shrunk level by level (from `level` down) until the result fits
+ * `limit` bytes (0 = no limit, one pass). If pictures alone cannot get there, the pages are rasterised, but only when
+ * that really fits. Returns { blob, level, pictures, fits }; level is "render" when pages became pictures.
+ */
+async function fitPdf(file, { level = "medium", limit = 0, gray = false }, tick) {
+  const start = Math.max(0, SHRINK_ORDER.indexOf(level));
+  let best = null, pictures = 0, used = level;
+  // Each step starts again from the original, so quality is lost only once.
+  for (const lv of SHRINK_ORDER.slice(start)) {
+    await tick?.(t(SHRINK_LABEL[lv]));
+    const doc = await loadPdf(file);
+    const { shrunk, candidates } = await shrinkImages(doc, ...SHRINK[lv], gray);
+    stripMetadata(doc);
+    const blob = pdfBlob(await doc.save({ useObjectStreams: true, updateMetadata: false }));
+    if (!best || blob.size < best.size) { best = blob; used = lv; pictures = shrunk; }
+    // a gentle level may shrink nothing where a stronger one would, so only a file without pictures ends the search
+    if (!limit || blob.size <= limit || !candidates) break;
+  }
+  if (limit && best.size > limit) {
+    // Pictures alone were not enough (a scan saved without JPEG, or mostly vector art): rasterise as a last resort,
+    // but only when that really gets under the limit. Otherwise the text is worth more than a few saved percent.
+    for (const [dpi, q] of [[110, 0.6], [85, 0.5], [60, 0.4]]) {
+      await tick?.(`${dpi} dpi`);
+      const blob = await rasterisePdf(file, dpi, q, gray);
+      if (blob.size <= limit) { best = blob; used = "render"; break; }
+    }
+  }
+  return { blob: best, level: used, pictures, fits: !limit || best.size <= limit };
 }
 
 const compressPdfTool = {
@@ -578,22 +795,6 @@ const compressPdfTool = {
     this.opts = { mode, level, target, dpi, quality, gray, sync };
     setTimeout(sync, 0); // after the remembered options are restored
   },
-  /** Every page as a JPEG at `dpi`: the last resort, text stops being text. */
-  async rasterise(file, dpi, quality, gray, progress) {
-    const doc = await PDFDocument.create();
-    await renderPages(file, dpi / 72, null, async (canvas, _n, wPt, hPt) => {
-      if (gray) {
-        const ctx = canvas.getContext("2d");
-        const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const d = img.data;
-        for (let i = 0; i < d.length; i += 4) { const y = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; d[i] = d[i + 1] = d[i + 2] = y; }
-        ctx.putImageData(img, 0, 0);
-      }
-      const jpg = await doc.embedJpg(await (await toBlob(canvas, "image/jpeg", quality)).arrayBuffer());
-      doc.addPage([wPt, hPt]).drawImage(jpg, { x: 0, y: 0, width: wPt, height: hPt });
-    }, progress);
-    return pdfBlob(await doc.save());
-  },
   async run(files, _root, progress) {
     const o = this.opts;
     const out = [];
@@ -606,50 +807,29 @@ const compressPdfTool = {
         stripMetadata(doc);
         const blob = pdfBlob(await doc.save({ useObjectStreams: true, updateMetadata: false }));
         if (blob.size >= file.size) out.push({ name: file.name, blob: file, note: "already compact: kept as is" });
-        else out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)}), text kept` });
+        else out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: `${saved(blob, file)} · ${t("text kept")}` });
         continue;
       }
       if (o.mode.value === "smart") {
         const limit = (Number(o.target.value) || 0) * 1024 * 1024;
-        const start = Math.max(0, SHRINK_ORDER.indexOf(o.level.value));
-        let best = null, pictures = 0, usedLevel = o.level.value;
-        // Each step starts again from the original, so quality is lost only once.
-        for (const lv of SHRINK_ORDER.slice(start)) {
-          await progress?.tick(`${file.name} · ${t(SHRINK_LABEL[lv])}`);
-          const doc = await loadPdf(file);
-          pictures = await shrinkImages(doc, ...SHRINK[lv], gray);
-          stripMetadata(doc);
-          const blob = pdfBlob(await doc.save({ useObjectStreams: true, updateMetadata: false }));
-          if (!best || blob.size < best.size) { best = blob; usedLevel = lv; }
-          if (!limit || blob.size <= limit || !pictures) break;
-        }
-        if (limit && best.size > limit) {
-          // Pictures alone were not enough (a scan saved without JPEG, or mostly vector art): rasterise as a last resort.
-          for (const [dpi, q] of [[110, 0.6], [85, 0.5], [60, 0.4]]) {
-            await progress?.tick(`${file.name} · ${dpi} dpi`);
-            const blob = await this.rasterise(file, dpi, q, gray);
-            if (blob.size < best.size) { best = blob; usedLevel = "render"; }
-            if (blob.size <= limit) break;
-          }
-        }
+        const { blob: best, level: usedLevel, pictures } = await fitPdf(file, { level: o.level.value, limit, gray }, (step) => progress?.tick(`${file.name} · ${step}`));
         if (best.size >= file.size) { out.push({ name: file.name, blob: file, note: "already compact: kept as is" }); continue; }
         const how = usedLevel === "render" ? t("pages turned into pictures to fit") : pictures ? t("{n} pictures shrunk, text kept", { n: pictures }) : t("no pictures to shrink, text kept");
         const fits = limit ? (best.size <= limit ? "" : ` · ${t("still over {limit}", { limit: formatBytes(limit) })}`) : "";
         out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob: best, note: `${saved(best, file)} · ${how}${fits}` });
         continue;
       }
-      const blob = await this.rasterise(file, Number(o.dpi.value), Number(o.quality.value) / 100, gray, progress);
+      const blob = await rasterisePdf(file, Number(o.dpi.value), Number(o.quality.value) / 100, gray, progress);
       if (blob.size >= file.size) {
         // Text and vector PDFs are already compact; rasterising them only makes them bigger (and the text unselectable).
         out.push({ name: file.name, blob: file, note: t("kept as is: re-rendering would make it {k}× bigger", { k: (blob.size / file.size).toFixed(1) }) });
         continue;
       }
-      out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: `−${Math.round((1 - blob.size / file.size) * 100)}% (was ${formatBytes(file.size)})` });
+      out.push({ name: `${baseName(file.name)}-compressed.pdf`, blob, note: saved(blob, file) });
     }
     return out;
   },
 };
-const SHRINK_LABEL = { high: "High quality", medium: "Balanced", low: "Small file", lowest: "Smallest file" };
 
 // ---------- delete pages ----------
 
@@ -675,8 +855,14 @@ const deletePagesTool = {
     const total = doc.getPageCount();
     const indices = parseRanges(this.opts.ranges.value, total);
     if (indices.length >= total) throw new Error("You cannot delete every page");
-    for (const i of [...indices].reverse()) doc.removePage(i);
-    return [{ name: `${baseName(files[0].name)}-edited.pdf`, blob: pdfBlob(await doc.save()), note: `${doc.getPageCount()} of ${total} pages kept` }];
+    // a deleted page must not stay in the file: empty it, drop the form fields that lived on it, then sweep
+    const victims = indices.map((i) => doc.getPage(i)), gone = new Set();
+    for (const page of victims) for (const [ref] of annotsOf(page)) if (ref instanceof PDFRef) gone.add(ref.tag);
+    for (const i of [...indices].sort((a, b) => b - a)) doc.removePage(i);
+    for (const page of victims) gutPage(page.node);
+    pruneFields(doc, gone);
+    sweepPdf(doc);
+    return [{ name: `${baseName(files[0].name)}-edited.pdf`, blob: pdfBlob(await doc.save()), note: t("{n} of {total} pages kept", { n: doc.getPageCount(), total }) }];
   },
 };
 
@@ -700,7 +886,7 @@ const reorderTool = {
     const grid = el("div", { class: "pages", role: "list" });
     const original = () => files.flatMap((f) => st.pages.filter((p) => p.file === f).sort((a, b) => a.i - b.i));
     const bar = el("div", { class: "actions" }, [
-      el("button", { type: "button", text: "Reverse", onclick: () => { st.pages.reverse(); paint(); } }),
+      el("button", { type: "button", text: "Reverse pages", onclick: () => { st.pages.reverse(); paint(); } }),
       el("button", { type: "button", text: "Rotate all ↻", onclick: () => { for (const p of st.pages) p.rot = (p.rot + 90) % 360; paint(); } }),
       el("button", { type: "button", text: "Reset", onclick: () => { st.pages = original(); for (const p of st.pages) { p.rot = 0; p.removed = false; } paint(); } }),
       info,
@@ -751,13 +937,15 @@ const reorderTool = {
       });
     };
     closeDocs();
+    const token = (this.token = {});
     this.loading = (async () => {
       for (const file of files) {
         const doc = await openDoc(file);
+        if (this.token !== token) return; // the file list changed while this one was opening: a newer render took over
         const mine = st.pages.filter((p) => p.file === file);
         if (!mine.length) for (let i = 0; i < doc.numPages; i++) { const p = { file, i, rot: 0, removed: false }; st.pages.push(p); mine.push(p); }
         const byIndex = [...mine].sort((a, b) => a.i - b.i);
-        const tiles = pageTiles(doc, grid, byIndex.map((p) => p.i));
+        const tiles = pageTiles(doc, grid, byIndex.map((p) => p.i), 104, true);
         byIndex.forEach((p, k) => { p.tile = tiles[k]; wire(p); });
         paint();
       }
@@ -783,9 +971,10 @@ const reorderTool = {
       if (p.rot) page.setRotation(degrees((page.getRotation().angle + p.rot) % 360));
       doc.addPage(page);
     }
+    sweepPdf(doc);
     const unchanged = files.length === 1 && keep.length === st.pages.length && keep.every((p, k) => p.i === k && !p.rot);
     const name = files.length === 1 ? `${baseName(files[0].name)}-reordered.pdf` : "organised.pdf";
-    return [{ name, blob: pdfBlob(await doc.save()), note: unchanged ? "same order as the original" : `${plural(keep.length, "page")}, new order` }];
+    return [{ name, blob: pdfBlob(await doc.save()), note: unchanged ? "same order as the original" : `${plural(keep.length, "page")}, ${t("new order")}` }];
   },
 };
 
@@ -819,11 +1008,11 @@ const pageNumbersTool = {
       const [vert, horiz] = o.position.value.split("-");
       pages.forEach((page, i) => {
         const label = o.format.value.replace("{n}", String(i + startAt)).replace("{total}", String(pages.length));
-        const { width, height } = page.getSize();
+        const view = pageView(page), { width, height } = view;
         const tw = font.widthOfTextAtSize(label, sz);
         const x = horiz === "left" ? m : horiz === "center" ? (width - tw) / 2 : width - m - tw;
         const y = vert === "top" ? height - m : m;
-        page.drawText(label, { x, y, size: sz, font, color: rgb(0.2, 0.2, 0.2) });
+        page.drawText(label, { ...view.at(x, y), size: sz, font, color: rgb(0.2, 0.2, 0.2), rotate: degrees(view.angle) });
       });
       out.push({ name: `${baseName(file.name)}-numbered.pdf`, blob: pdfBlob(await doc.save()), note: plural(pages.length, "page") });
     }
@@ -866,11 +1055,11 @@ const watermarkPdfTool = {
       const theta = (Number(o.angle.value) * Math.PI) / 180;
       const tw = font.widthOfTextAtSize(label, sz), th = sz * 0.72;
       for (const page of doc.getPages()) {
-        const { width, height } = page.getSize();
+        const view = pageView(page), { width, height } = view;
         // Centre the rotated text box on the page: rotate the box centre about the text origin.
         const x = width / 2 - ((tw / 2) * Math.cos(theta) - (th / 2) * Math.sin(theta));
         const y = height / 2 - ((tw / 2) * Math.sin(theta) + (th / 2) * Math.cos(theta));
-        page.drawText(label, { x, y, size: sz, font, color, opacity: Number(o.opacity.value) / 100, rotate: degrees(Number(o.angle.value)) });
+        page.drawText(label, { ...view.at(x, y), size: sz, font, color, opacity: Number(o.opacity.value) / 100, rotate: degrees(Number(o.angle.value) + view.angle) });
       }
       out.push({ name: `${baseName(file.name)}-watermarked.pdf`, blob: pdfBlob(await doc.save()), note: plural(doc.getPageCount(), "page") });
     }
@@ -888,7 +1077,17 @@ function stripMetadata(doc) {
   if (info instanceof PDFDict) {
     for (const key of [...info.keys()]) { removed.push(key.decodeText()); info.delete(key); }
   }
-  if (doc.catalog.has(PDFName.of("Metadata"))) { doc.catalog.delete(PDFName.of("Metadata")); removed.push("XMP"); }
+  // XMP packets: the document's own and the ones attached to pages, pictures and fonts. Deleting the key alone is not
+  // enough, the stream would still be written, so the objects go too.
+  let xmp = false;
+  for (const [ref, obj] of doc.context.enumerateIndirectObjects()) {
+    const dict = obj instanceof PDFStream ? obj.dict : obj instanceof PDFDict ? obj : null;
+    if (!dict) continue;
+    if (dict.has(N("Metadata"))) { dict.delete(N("Metadata")); xmp = true; }
+    if (obj instanceof PDFStream && dict.get(N("Type")) === N("Metadata")) { doc.context.delete(ref); xmp = true; }
+  }
+  if (xmp) removed.push("XMP");
+  dropOrphans(doc);
   return removed;
 }
 
@@ -1061,10 +1260,10 @@ const cropPdfTool = {
       if (o.mode.value === "manual") {
         for (const i of indices) {
           const page = doc.getPage(i);
-          const { x, y, width, height } = page.getMediaBox();
+          const view = pageView(page), { width, height } = view;
           const l = Number(o.left.value) * MM, r = Number(o.right.value) * MM, tp = Number(o.top.value) * MM, b = Number(o.bottom.value) * MM;
           if (l + r >= width || tp + b >= height) throw new Error(t("The margins are larger than the page"));
-          page.setCropBox(x + l, y + b, width - l - r, height - tp - b);
+          cropToView(page, view, l, b, width - r, height - tp);
           cropped++;
         }
       } else {
@@ -1076,12 +1275,12 @@ const cropPdfTool = {
           const info = boxes.get(i);
           if (!info?.box) continue;
           const page = doc.getPage(i);
-          const { x: mx, y: my, width, height } = page.getMediaBox();
+          // pdf.js drew the page as it is seen (cropped, turned), so the ink box is in view coordinates, measured top-down
+          const view = pageView(page), { width, height } = view;
           const kx = width / info.cw, ky = height / info.ch;
           const x0 = Math.max(0, info.box.x0 * kx - padPt), x1 = Math.min(width, info.box.x1 * kx + padPt);
           const yTop = Math.max(0, info.box.y0 * ky - padPt), yBottom = Math.min(height, info.box.y1 * ky + padPt);
-          // pdf.js renders top-down; PDF boxes are measured from the bottom-left corner.
-          page.setCropBox(mx + x0, my + height - yBottom, x1 - x0, yBottom - yTop);
+          cropToView(page, view, x0, height - yBottom, x1, height - yTop);
           cropped++;
         }
       }
@@ -1118,11 +1317,9 @@ const nupTool = {
       await progress?.tick(file.name);
       const src = await loadPdf(file);
       const doc = await PDFDocument.create();
-      const srcBytes = await src.save();
-      const indices = Array.from({ length: src.getPageCount() }, (_, i) => i);
-      const embedded = await doc.embedPdf(srcBytes, indices);
+      const embedded = await embedSeen(doc, src);
       let base = o.sheet.value === "letter" ? PageSizes.Letter : o.sheet.value === "a3" ? PageSizes.A3 : PageSizes.A4;
-      const first = src.getPage(0).getSize();
+      const first = embedded[0];
       const landscape = o.orient.value === "landscape" || (o.orient.value === "auto" && ((n === 2 && first.width <= first.height) || (n === 1 && first.width > first.height) || (n === 6 && first.width > first.height)));
       const [sw, sh] = landscape ? [base[1], base[0]] : base;
       const m = Number(o.margin.value) * MM, g = Number(o.gap.value) * MM;
@@ -1135,7 +1332,7 @@ const nupTool = {
           const scale = Math.min(cw / ep.width, ch / ep.height);
           const w = ep.width * scale, h = ep.height * scale;
           const x = m + col * (cw + g) + (cw - w) / 2, y = sh - m - (row + 1) * ch - row * g + (ch - h) / 2;
-          page.drawPage(ep, { x, y, width: w, height: h });
+          page.drawPage(ep.page, { x, y, xScale: scale, yScale: scale });
           if (o.borders.input.checked && n > 1) page.drawRectangle({ x, y, width: w, height: h, borderColor: rgb(0.6, 0.6, 0.6), borderWidth: 0.5 });
         }
       }
@@ -1184,17 +1381,17 @@ const stampTool = {
       await progress?.tick(file.name);
       const doc = await loadPdf(file);
       const bytes = image.type === "image/png" ? await image.arrayBuffer() : image.type === "image/jpeg" && jpegOrientation(new Uint8Array(await image.arrayBuffer())) === 1 ? await image.arrayBuffer() : await reencode(image, "image/png");
-      const img = image.type === "image/jpeg" && jpegOrientation(new Uint8Array(await image.arrayBuffer())) === 1 ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
+      const img = image.type === "image/jpeg" && jpegOrientation(new Uint8Array(await image.arrayBuffer())) === 1 ? await doc.embedJpg(bareJpeg(bytes)) : await doc.embedPng(bytes);
       const total = doc.getPageCount();
       const indices = o.which.value === "all" ? Array.from({ length: total }, (_, i) => i) : o.which.value === "first" ? [0] : o.which.value === "last" ? [total - 1] : parseRanges(o.ranges.value, total);
       const [v, h] = o.position.split("-");
       for (const i of indices) {
         const page = doc.getPage(i);
-        const { width, height } = page.getSize();
+        const view = pageView(page), { width, height } = view;
         const w = (width * Number(o.size.value)) / 100, hh = (w * img.height) / img.width, m = Number(o.margin.value) * MM;
         const x = h === "left" ? m : h === "center" ? (width - w) / 2 : width - w - m;
         const y = v === "bottom" ? m : v === "middle" ? (height - hh) / 2 : height - hh - m;
-        page.drawImage(img, { x, y, width: w, height: hh, opacity: Number(o.opacity.value) / 100 });
+        page.drawImage(img, { ...view.at(x, y), width: w, height: hh, opacity: Number(o.opacity.value) / 100, rotate: degrees(view.angle) });
       }
       out.push({ name: `${baseName(file.name)}-stamped.pdf`, blob: pdfBlob(await doc.save()), note: t("{n} of {total} pages stamped", { n: indices.length, total }) });
     }
@@ -1306,8 +1503,8 @@ const bookletTool = {
     const src = await loadPdf(file);
     const n = src.getPageCount(), total = Math.ceil(n / 4) * 4;
     const doc = await PDFDocument.create();
-    const embedded = await doc.embedPdf(await src.save(), Array.from({ length: n }, (_, i) => i));
-    const first = src.getPage(0).getSize();
+    const embedded = await embedSeen(doc, src);
+    const first = embedded[0];
     let sw, sh;
     if (o.sheet.value === "same") { sw = first.width * 2; sh = first.height; }
     else { const base = o.sheet.value === "letter" ? PageSizes.Letter : o.sheet.value === "a3" ? PageSizes.A3 : PageSizes.A4; [sw, sh] = [base[1], base[0]]; }
@@ -1321,7 +1518,7 @@ const bookletTool = {
         const scale = Math.min(cw / ep.width, ch / ep.height);
         const w = ep.width * scale, h = ep.height * scale;
         const x = k === 0 ? sw / 2 - g - w : sw / 2 + g;
-        page.drawPage(ep, { x, y: (sh - h) / 2, width: w, height: h });
+        page.drawPage(ep.page, { x, y: (sh - h) / 2, xScale: scale, yScale: scale });
       });
       if (o.line.input.checked) page.drawLine({ start: { x: sw / 2, y: m / 2 }, end: { x: sw / 2, y: sh - m / 2 }, thickness: 0.4, color: rgb(0.6, 0.6, 0.6), dashArray: [3, 3] });
     }
@@ -1390,7 +1587,8 @@ const formTool = {
       try {
         if (kind === "text") { if (input.disabled) continue; f.setText(input.value || ""); texts += input.value; filled++; }
         else if (kind === "check") { if (input.checked) f.check(); else f.uncheck(); filled++; }
-        else if (input.value) { f.select(input.value); filled++; }
+        else if (input.value) { f.select(input.value); texts += input.value; filled++; }
+        if (kind !== "text" && kind !== "check") { try { texts += f.getOptions().join(""); } catch (_) { /* a radio group has no option list */ } }
       } catch (err) { throw new Error(t("Field \"{name}\": {msg}", { name: f0.getName(), msg: err.message })); }
     }
     if (!this.inputs.length && !this.flatten.input.checked) throw new Error("This PDF has no form fields");
@@ -1729,4 +1927,4 @@ const signTool = {
 export const pdfTools = [mergeTool, splitTool, signTool, reorderTool, rotatePdfTool, deletePagesTool, cropPdfTool, nupTool, bookletTool, pageNumbersTool, watermarkPdfTool, stampTool, formTool, compressPdfTool, pdfMetadataTool, imagesToPdfTool, pdfToImagesTool, extractImagesTool, pdfToTextTool];
 
 // Shared with the PDF tools in pdf-more.js (passwords, repair, redact, compare).
-export { pdfjsLib, pdfjsOpen, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, fontFor, toBlob as canvasBlob };
+export { pdfjsLib, pdfjsOpen, openDoc, closeDocs, renderThumb, renderPages, loadPdf, pdfBlob, fontFor, gutPage, sweepPdf, stripMetadata, infoRows, pageView, embedPicture, fitPdf, rasterisePdf, toBlob as canvasBlob };

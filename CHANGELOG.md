@@ -1,5 +1,91 @@
 # Changelog
 
+## 1.6.0
+
+### Added
+
+- **Document pack**: photos, scans and PDFs in any mix become one PDF that fits an upload form. Pick the limit
+  (1, 2, 5, 10 MB or your own) and the file name, in Latin letters if the portal insists.
+- **Safe copy of a document**: writes who the copy is for ("Copy for the bank · 18.11.2026") across the whole page
+  of a passport or ID scan. Pages are flattened into pictures, so the note cannot be deleted, and metadata is dropped.
+- **Privacy check**: what a file gives away before you send it: where a photo was taken and the hidden thumbnail of
+  the uncropped shot, the author and edit history of a PDF, comments and tracked changes in Word, hidden sheets in
+  Excel. One button makes cleaned copies.
+- **Images to GIF**: a set of pictures as an animated GIF (slideshow, steps, before and after).
+- **Split PDF** has a new mode: parts no larger than a size limit.
+- **ID & passport photo** can save for an online application: exact pixels and a size limit in KB.
+- **A look inside dropped files**: drop anything on the home page and FileForge says what it is and offers the tool
+  for it ("A scan: 12 pages with no text to select" → make it searchable; "3 of 10 photos say where they were
+  taken" → remove the location; photos and PDFs together → one PDF).
+- Extension: the right-click menu on an image can also convert it, read its text or read its QR code; on a page or
+  a link, "QR code for this address" opens it on your phone.
+- Search: when nothing matches every word, similar tools are offered; an empty search shows recent and popular tools.
+
+### Changed
+
+- Results: "Download all" and "Save all to a folder" sit in the heading, above the list; a single result gets one
+  big Download button and a note that it is already in your downloads folder.
+- File rows show the size and dimensions under the name and keep their buttons together; a long list scrolls in its
+  own box. The web app is usable at phone width.
+- Cancel is always there while a job runs. Leaving a tool, or pressing Clear, stops its job.
+- Clearer colours for links and buttons in the light theme, a visible keyboard focus ring, a toast that no longer
+  covers the Run button.
+- Text files saved as Windows-1251 (Excel "CSV", bank and 1C exports) are read correctly, and the tool says so.
+- 75 tools in total (was 71).
+
+### Fixed
+
+Privacy first:
+
+- **Redact PDF**: the text of a redacted page could survive inside the file when another page linked to it, or
+  through a filled form. Redacted pages are now emptied before anything is copied.
+- **Delete PDF pages**, **Split PDF** and **Organise pages**: removed pages stayed in the file, unlinked but
+  readable. They are now really gone, together with the form fields that lived on them.
+- **Remove PDF metadata** (and Compress PDF) left the XMP packet with author, software and dates in the file.
+- **Images to PDF** and **Stamp** embedded the camera's EXIF block (GPS position, device, thumbnail) in the PDF.
+- **Remove metadata** left embedded previews and motion-photo video after the picture untouched, with their own
+  copy of the metadata, and made portrait phone photos open sideways. Both fixed.
+- **Redact image**, Blur: the original no longer shows through at the edges of the box.
+
+PDF:
+
+- Page numbers, Watermark, Stamp, Crop, Pages per sheet and Booklet work on the page as it is seen: turned
+  (rotated scans) and already cropped pages get the number in the right corner, upright. Blank pages no longer
+  stop Pages per sheet.
+- Smart compression turned pictures sideways when they carried a phone's rotation tag, and gave up on the size
+  limit too early, turning the whole document into pictures when a stronger picture setting would have done.
+- Redact PDF and searchable PDFs from OCR stored shared fonts and pictures once per page: a 300-page file could
+  grow to hundreds of megabytes.
+- Redact PDF "Find & mark" finds a phrase that is split into several pieces of text, and covers its first and
+  last letters fully.
+- Fill PDF form failed on forms with Cyrillic dropdown choices.
+
+Data and text:
+
+- CSV with ";" and decimal commas (the Excel default in Ukraine) was split on the commas. An inch mark or a quote
+  in the middle of a cell no longer swallows the following rows.
+- Excel to CSV wrote dates the US way and lost the time; CSV to Excel shifted dates by the time zone.
+- CSV to Excel failed on files over about 120,000 rows and on long file names.
+- JSON format warns when a 64-bit number would be rounded or a key is repeated.
+- Text diff could run out of memory on two very different texts.
+- Title Case no longer capitalises after an apostrophe (Don't, П'ять); camelCase and snake_case really split words.
+- ZIP archives with Cyrillic names made on Windows show the names correctly; Create ZIP keeps the folder structure
+  of a dropped folder, and its Cancel works.
+- Video to images sampled only the first 5 seconds by default.
+- Word to Markdown: table cells with several paragraphs, and bold text followed by a space.
+
+App and extension:
+
+- The web app did not start offline.
+- A job kept running after you left its tool, and its results appeared under the next one.
+- The "Skip to the tool" link cleared the files.
+- Whole-page screenshots were mis-stitched on sites with smooth scrolling.
+- "Open PDF in FileForge" did not appear on PDF links of ordinary pages.
+- Dropping a ZIP on Checksums, Base64 or Rename unpacked it instead of taking the archive itself.
+- A HEIC file that the decoder could not handle left the tool on "Working…" forever.
+- Dragging a result and letting go inside the page wiped the results.
+- Two results with the same name (photo.jpg and photo.png both to WebP) are now told apart.
+
 ## 1.5.0
 
 ### Added

@@ -1,4 +1,4 @@
-import { el, field, select, download, readAsText, toast, baseName, t } from "../util.js";
+import { el, field, select, download, readText, toast, baseName, t } from "../util.js";
 import { copyButton } from "./data.js";
 
 const SAMPLE = `# FileForge
@@ -110,7 +110,7 @@ const mdToPdfTool = {
     this.preview = preview;
     this.titleOf = titleOf;
     if (files[0]) {
-      readAsText(files[0]).then((t) => { editor.value = t; update(); }).catch((err) => toast(err.message, "error"));
+      readText(files[0]).then((t) => { editor.value = t; update(); }).catch((err) => toast(err.message, "error"));
     } else {
       update();
     }
@@ -158,7 +158,7 @@ const mdToHtmlTool = {
     theme.addEventListener("change", build); mode.addEventListener("change", build);
     root.append(el("div", { class: "row" }, [field("Style", theme), field("Output", mode)]), el("div", { class: "md-grid" }, [field("Markdown", editor), field("Preview", preview)]), of);
     this.ui = { output, titleOf };
-    if (files[0]) readAsText(files[0]).then((x) => { editor.value = x; build(); }).catch((err) => toast(err.message, "error")); else build();
+    if (files[0]) readText(files[0]).then((x) => { editor.value = x; build(); }).catch((err) => toast(err.message, "error")); else build();
   },
   async run() {
     const { output, titleOf } = this.ui;

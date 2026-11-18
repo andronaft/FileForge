@@ -79,13 +79,36 @@ const renameTool = {
 
 // ---------- ZIP ----------
 
-/** `name`, or `name (2)`, `name (3)`… when it is already taken (case-insensitive). */
-function unique(name, used) {
-  const dot = name.lastIndexOf("."), stem = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+/** `name`, or `name (2)`, `name (3)`… when it is already taken (case-insensitive). A name may be a path: the number
+ *  goes before the extension of its last part ("my.site/index (2).html"). */
+export function unique(name, used) {
+  const dot = name.lastIndexOf("."), cut = dot > name.lastIndexOf("/") + 1 ? dot : name.length;
+  const stem = name.slice(0, cut), ext = name.slice(cut);
   let out = name, k = 1;
   while (used.has(out.toLowerCase())) out = `${stem} (${++k})${ext}`;
   used.add(out.toLowerCase());
   return out;
+}
+
+/**
+ * The name of a ZIP entry that is not flagged as UTF-8. Archivers on a Cyrillic Windows write such names in the DOS
+ * code page (CP866) or, some of them, in Windows-1251; read as UTF-8 "Договір.txt" turns into "�������.txt".
+ * Pass it to JSZip: JSZip.loadAsync(file, { decodeFileName: decodeZipName }).
+ */
+export function decodeZipName(bytes) {
+  try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch (_) { /* a legacy code page */ }
+  // CP866 has А–п at 0x80–0xAF, where Windows-1251 has almost no letters; Windows-1251 has А–Я at 0xC0–0xDF and
+  // р–я at 0xF0–0xFF, where CP866 has box-drawing characters. 0xE0–0xEF are letters in both and decide nothing.
+  let dos = 0, win = 0;
+  for (const b of bytes) { if (b >= 0x80 && b <= 0xaf) dos++; else if ((b >= 0xc0 && b <= 0xdf) || b >= 0xf0) win++; }
+  return new TextDecoder(win > dos || !dos ? "windows-1251" : "ibm866").decode(bytes);
+}
+
+/** Where a file sat inside a dropped or picked folder ("photos/2024/a.jpg"), else just its name. Never absolute, never with "..". */
+export function relativePath(f) {
+  const rel = f.webkitRelativePath || f.relativePath || (/^(\/|\\|[a-z]:)/i.test(f.path || "") ? "" : f.path) || "";
+  const parts = String(rel).replace(/\\/g, "/").split("/").filter((p) => p && p !== "." && p !== "..");
+  return parts.length > 1 ? parts.join("/") : f.name;
 }
 
 const zipCreateTool = {
@@ -106,13 +129,18 @@ const zipCreateTool = {
   },
   async run(files, _root, progress) {
     const zip = new JSZip(), used = new Set();
-    for (const f of files) zip.file(unique(f.name, used), f, { date: new Date(f.lastModified || Date.now()) });
+    for (const f of files) zip.file(unique(relativePath(f), used), f, { date: new Date(f.lastModified || Date.now()) }); // a path keeps the folders of a dropped folder
     const level = Number(this.opts.level.value);
     progress?.start(100);
     let last = 0;
-    const blob = await zip.generateAsync({ type: "blob", compression: level ? "DEFLATE" : "STORE", compressionOptions: { level: level || 1 } }, (m) => {
-      const pct = Math.floor(m.percent);
-      while (last < pct) { last++; progress?.tick(m.currentFile || ""); }
+    // generateAsync cannot be stopped once started; the stream it is built on can be paused, and that is Cancel here.
+    const stream = zip.generateInternalStream({ type: "blob", compression: level ? "DEFLATE" : "STORE", compressionOptions: { level: level || 1 } });
+    const blob = await new Promise((resolve, reject) => {
+      stream.accumulate((m) => {
+        if (progress?.signal.aborted) { stream.pause(); reject(new Error("Cancelled")); return; }
+        const pct = Math.floor(m.percent);
+        while (last < pct) { last++; progress?.tick(m.currentFile || "").catch(() => {}); }
+      }).then(resolve, reject);
     });
     const total = files.reduce((s, f) => s + f.size, 0);
     const stem = (this.opts.name.value.trim() || "archive").replace(/\.zip$/i, "").replace(/[\\/:*?"<>|]+/g, "-");
@@ -147,10 +175,11 @@ const zipExtractTool = {
     st.ready = (async () => {
       for (const f of files) {
         try {
-          const zip = await JSZip.loadAsync(f);
+          const zip = await JSZip.loadAsync(f, { decodeFileName: decodeZipName });
           for (const entry of Object.values(zip.files)) {
-            if (entry.dir || /(^|\/)(__MACOSX\/|\.DS_Store$)/.test(entry.name)) continue;
-            st.entries.push({ entry, path: entry.name, size: entry._data?.uncompressedSize || 0 });
+            const path = entry.name.replace(/\\/g, "/"); // some Windows tools write "dir\file.txt"
+            if (entry.dir || path.endsWith("/") || /(^|\/)(__MACOSX\/|\.DS_Store$)/.test(path)) continue;
+            st.entries.push({ entry, path, size: entry._data?.uncompressedSize || 0 });
           }
         } catch (err) { st.error = t("Could not open {name}: {error}", { name: f.name, error: /encrypt/i.test(err.message) ? t("password-protected archives are not supported") : err.message }); }
       }

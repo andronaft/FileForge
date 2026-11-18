@@ -1,6 +1,6 @@
 // More PDF tools: passwords and permissions (qpdf), repair, true redaction and text comparison.
 import { el, baseName, field, select, checkbox, formatBytes, plural, toast, t } from "../util.js";
-import { pdfjsOpen, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, canvasBlob } from "./pdf.js";
+import { pdfjsOpen, openDoc, closeDocs, renderThumb, loadPdf, pdfBlob, canvasBlob, gutPage, sweepPdf } from "./pdf.js";
 import { qpdf, qpdfMessage, pdfLock, decryptPdf, PdfPasswordError } from "../qpdf.js";
 import { diffLines, unified } from "./text.js";
 
@@ -69,7 +69,7 @@ const protectTool = {
       const res = await qpdf(await bytesOf(file), args);
       if (!res.output || (res.code !== 0 && res.code !== 3)) {
         if (/invalid password/i.test(res.log)) throw new Error(t("{name} already has a password. Remove it with Unlock PDF first.", { name: file.name }));
-        throw new Error(`${file.name}: ${qpdfMessage(res.log) || "could not be encrypted"}`);
+        throw new Error(`${file.name}: ${qpdfMessage(res.log) || t("could not be encrypted")}`);
       }
       out.push({ name: `${baseName(file.name)}-protected.pdf`, blob: pdfBlob(res.output), note: user ? t("password set, AES-256") : t("restricted, no password to open") });
     }
@@ -139,7 +139,7 @@ const repairTool = {
         if (/invalid password/i.test(res.log)) throw new Error(t("{name} is password-protected. Remove the password with Unlock PDF first.", { name: file.name }));
         // qpdf gives up on a file whose end is missing (a cut-off download). pdf-lib is more forgiving: it scans
         // for whatever objects are there. Rebuild with it, then let qpdf tidy the result.
-        const reason = qpdfMessage(res.log) || "no readable pages";
+        const reason = qpdfMessage(res.log) || t("no readable pages");
         try {
           const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, throwOnInvalidObject: false, updateMetadata: false });
           if (!doc.getPageCount()) throw new Error("no pages");
@@ -213,19 +213,40 @@ const redactPdfTool = {
       info.textContent = st.boxes.length ? t("{areas} on {pages} · click a box to remove it", { areas: plural(st.boxes.length, "area"), pages: plural(pages, "page"), n: pages }) : t("Drag over the parts to hide, or find a word to mark every place it appears");
     };
     const findBtn = el("button", { type: "button", text: "Find & mark", onclick: async () => {
-      const q = find.value.trim().toLowerCase();
+      const q = find.value.trim().toLowerCase().replace(/\s+/g, " ");
       if (!q || !this.doc) return;
       let hits = 0;
+      const heightOf = (it) => it.height || Math.hypot(it.transform[2], it.transform[3]) || 10;
       for (let i = 0; i < this.doc.numPages; i++) {
         const page = await this.doc.getPage(i + 1), vp = page.getViewport({ scale: 1 });
-        for (const item of (await page.getTextContent()).items) {
-          const s = item.str.toLowerCase();
-          if (!s.includes(q) || !item.width) continue;
-          const [, , , , e, f] = item.transform, h = item.height || Math.hypot(item.transform[2], item.transform[3]);
-          for (let at = s.indexOf(q); at >= 0; at = s.indexOf(q, at + q.length)) {
-            const x0 = e + item.width * (at / s.length), x1 = e + item.width * ((at + q.length) / s.length);
-            const [ax, ay] = vp.convertToViewportPoint(x0, f - h * 0.25), [bx, by] = vp.convertToViewportPoint(x1, f + h * 0.95);
-            st.boxes.push({ page: i, x: Math.min(ax, bx) - 1.5, y: Math.min(ay, by) - 1, w: Math.abs(bx - ax) + 3, h: Math.abs(by - ay) + 2 });
+        // A name is often split into several pieces of text (a bold word, a table cell, kerning), so search whole
+        // lines: pieces on one baseline are joined, with a space wherever there is a visible gap between them.
+        const lines = [];
+        for (const it of (await page.getTextContent()).items) {
+          if (!it.str || !it.width) continue;
+          const last = lines.at(-1), y = it.transform[5];
+          if (last && Math.abs(last.y - y) < heightOf(it) * 0.5) last.items.push(it); else lines.push({ y, items: [it] });
+        }
+        for (const line of lines) {
+          let text = "", end = null;
+          const spans = [];
+          for (const it of line.items) {
+            if (end != null && it.transform[4] - end > heightOf(it) * 0.15 && !/\s$/.test(text) && !/^\s/.test(it.str)) text += " ";
+            spans.push({ it, from: text.length, to: text.length + it.str.length });
+            text += it.str; end = it.transform[4] + it.width;
+          }
+          const hay = text.toLowerCase().replace(/\s/g, " ");
+          for (let at = hay.indexOf(q); at >= 0; at = hay.indexOf(q, at + q.length)) {
+            for (const { it, from, to } of spans) {
+              const a = Math.max(at, from), b = Math.min(at + q.length, to);
+              if (a >= b) continue;
+              const [, , , , e, f] = it.transform, h = heightOf(it), len = it.str.length;
+              // The position inside a piece is estimated by character count; letters differ in width, so the box
+              // gets a third of a line height of slack on each side. Too wide is fine here, too narrow is not.
+              const x0 = e + it.width * ((a - from) / len) - h * 0.3, x1 = e + it.width * ((b - from) / len) + h * 0.3;
+              const [ax, ay] = vp.convertToViewportPoint(x0, f - h * 0.3), [bx, by] = vp.convertToViewportPoint(x1, f + h);
+              st.boxes.push({ page: i, x: Math.min(ax, bx), y: Math.min(ay, by) - 1, w: Math.abs(bx - ax), h: Math.abs(by - ay) + 2 });
+            }
             hits++;
           }
         }
@@ -243,7 +264,9 @@ const redactPdfTool = {
     );
     this.opts = { dpi, all };
     closeDocs();
+    const token = (this.token = {});
     openDoc(file).then((doc) => {
+      if (this.token !== token) return; // a newer file took over while this one was opening
       this.doc = doc;
       return pageStack(doc, pagesBox, root, (i, sheet, layer, scale) => {
         layers.push({ i, layer, scale });
@@ -279,11 +302,18 @@ const redactPdfTool = {
     const scale = (Number(o.dpi.value) || 200) / 72;
     let rebuilt = 0;
     try {
+      // Pages that get rebuilt as pictures are emptied in the source first: a link or a form field on an untouched
+      // page would otherwise carry their original text into the output. Untouched pages are copied in one go, so
+      // fonts and pictures they share are stored once.
+      const all = o.all.input.checked, total = src.getPageCount(), kept = [];
+      const marked = (i) => all || (st?.boxes || []).some((b) => b.page === i);
+      for (let i = 0; i < total; i++) { if (marked(i)) gutPage(src.getPage(i).node); else kept.push(i); }
+      const copies = new Map((await out.copyPages(src, kept)).map((p, k) => [kept[k], p]));
       progress?.start(doc.numPages);
       for (let i = 0; i < doc.numPages; i++) {
         await progress?.tick(`page ${i + 1}`);
-        const boxes = st.boxes.filter((b) => b.page === i);
-        if (!boxes.length && !o.all.input.checked) { const [copy] = await out.copyPages(src, [i]); out.addPage(copy); continue; }
+        const boxes = (st?.boxes || []).filter((b) => b.page === i);
+        if (copies.has(i)) { out.addPage(copies.get(i)); continue; }
         const page = await doc.getPage(i + 1), base = page.getViewport({ scale: 1 }), vp = page.getViewport({ scale });
         const canvas = document.createElement("canvas");
         canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
@@ -297,6 +327,7 @@ const redactPdfTool = {
         page.cleanup(); rebuilt++;
       }
     } finally { await doc.destroy(); }
+    sweepPdf(out);
     const blob = pdfBlob(await out.save());
     return [{ name: `${baseName(files[0].name)}-redacted.pdf`, blob, note: `${t("{areas} hidden", { areas: plural(st.boxes.length, "area") })} · ${t("{pages} rebuilt as images", { pages: plural(rebuilt, "page") })}` }];
   },

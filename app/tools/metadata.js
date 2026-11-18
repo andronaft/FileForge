@@ -18,10 +18,53 @@ function hasGps(exif) {
   return false;
 }
 
-function cleanJpeg(b) {
+/** EXIF Orientation (1-8) from an Exif APP1 payload, 1 when absent or unreadable. */
+function exifOrientation(exif) {
+  try {
+    const t = exif.subarray(6);
+    const le = t[0] === 0x49;
+    const r16 = (i) => (le ? t[i] | (t[i + 1] << 8) : (t[i] << 8) | t[i + 1]);
+    const r32 = (i) => (le ? u32le(t, i) : ((t[i] << 24) | (t[i + 1] << 16) | (t[i + 2] << 8) | t[i + 3]) >>> 0);
+    const ifd = r32(4), n = r16(ifd);
+    for (let k = 0; k < n; k++) { const e = ifd + 2 + k * 12; if (r16(e) === 0x0112) { const v = r16(e + 8); return v >= 1 && v <= 8 ? v : 1; } }
+  } catch (_) { /* malformed EXIF */ }
+  return 1;
+}
+
+/** A minimal Exif segment that carries nothing but the Orientation tag, so a cleaned portrait photo stays upright. */
+const orientationSegment = (o) => new Uint8Array([
+  0xff, 0xe1, 0x00, 0x22, 0x45, 0x78, 0x69, 0x66, 0x00, 0x00, // APP1, length 34, "Exif\0\0"
+  0x4d, 0x4d, 0x00, 0x2a, 0x00, 0x00, 0x00, 0x08,             // big-endian TIFF, IFD0 at offset 8
+  0x00, 0x01, 0x01, 0x12, 0x00, 0x03, 0x00, 0x00, 0x00, 0x01, 0x00, o, 0x00, 0x00, // one entry: Orientation, SHORT, 1, value
+  0x00, 0x00, 0x00, 0x00,                                     // no next IFD
+]);
+
+/** Index just past the EOI that ends the picture whose first scan header (SOS) is at `i`; b.length when there is none. */
+function jpegEnd(b, i) {
+  while (i + 4 <= b.length) {
+    i += 2 + u16(b, i + 2); // a segment with a length: SOS header, or tables between the scans of a progressive file
+    while (i + 1 < b.length) { // compressed data up to the next real marker
+      if (b[i] !== 0xff) { i++; continue; }
+      const m = b[i + 1];
+      if (m === 0xff) { i++; continue; }
+      if (m === 0x00 || (m >= 0xd0 && m <= 0xd7)) { i += 2; continue; }
+      break;
+    }
+    if (i + 1 >= b.length) return b.length;
+    if (b[i + 1] === 0xd9) return i + 2;
+  }
+  return b.length;
+}
+
+/**
+ * Splits a JPEG into the parts worth keeping. Dropped: EXIF (with GPS and the embedded thumbnail), XMP, IPTC, comments,
+ * other application data, and everything after the end of the picture (previews, depth maps, the video of a motion
+ * photo), which carries its own copy of the metadata. With `orientation`, a rotated photo keeps a one-tag Exif block.
+ */
+function cleanJpeg(b, { orientation = true } = {}) {
   const parts = [b.subarray(0, 2)];
   const kinds = new Set();
-  let gps = false;
+  let gps = false, turned = false;
   let i = 2;
   while (i + 4 <= b.length && b[i] === 0xff) {
     const marker = b[i + 1];
@@ -33,17 +76,44 @@ function cleanJpeg(b) {
     const ascii = (n) => String.fromCharCode(...payload.subarray(0, n));
     let drop = false;
     if (marker === 0xe1) {
-      if (ascii(4) === "Exif") { kinds.add("EXIF"); if (hasGps(payload)) { gps = true; kinds.add("GPS"); } drop = true; }
+      if (ascii(4) === "Exif") {
+        const o = exifOrientation(payload), bare = len === 0x22 && o !== 1; // our own one-tag block from an earlier clean
+        if (!bare || !orientation) { kinds.add("EXIF"); if (hasGps(payload)) { gps = true; kinds.add("GPS"); } }
+        drop = true;
+        if (orientation && o !== 1 && !turned) { parts.push(orientationSegment(o)); turned = true; }
+      }
       else if (ascii(5) === "http:") { kinds.add("XMP"); drop = true; }
     } else if (marker === 0xed) { kinds.add("IPTC"); drop = true; }
     else if (marker === 0xfe) { kinds.add("comment"); drop = true; }
+    else if (marker === 0xe2 && ascii(11) !== "ICC_PROFILE") { kinds.add("embedded previews"); drop = true; } // MPF index of extra pictures
     else if (marker >= 0xe0 && marker <= 0xef && marker !== 0xe0 && marker !== 0xe2 && marker !== 0xee) { kinds.add("app data"); drop = true; }
     // kept: APP0 JFIF, APP2 ICC colour profile, APP14 Adobe (needed for correct colours), and everything else
     if (!drop) parts.push(seg);
     i += 2 + len;
   }
-  parts.push(b.subarray(i));
+  const end = b[i] === 0xff && b[i + 1] === 0xda ? jpegEnd(b, i) : b.length;
+  parts.push(b.subarray(i, end));
+  if (b.length - end > 16) kinds.add("embedded previews"); // a few stray bytes of padding are not worth a mention
   return { parts, kinds, gps };
+}
+
+/** JPEG bytes with no metadata at all, not even the orientation: for embedding a picture in another file. */
+export function bareJpeg(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (b[0] !== 0xff || b[1] !== 0xd8) return b;
+  const { parts } = cleanJpeg(b, { orientation: false });
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+/** Metadata-free parts of a JPEG, PNG or WebP ({ parts, kinds, gps }), or null for any other kind of file. */
+export function cleanImage(b) {
+  if (b[0] === 0xff && b[1] === 0xd8) return cleanJpeg(b);
+  if (b[0] === 0x89 && b[1] === 0x50) return cleanPng(b);
+  if (b[0] === 0x52 && b[8] === 0x57) return cleanWebp(b);
+  return null;
 }
 
 function cleanPng(b) {
@@ -221,17 +291,14 @@ export const metadataTool = {
     for (const file of files) {
       await progress?.tick(file.name);
       const b = new Uint8Array(await file.arrayBuffer());
-      let r;
-      if (b[0] === 0xff && b[1] === 0xd8) r = cleanJpeg(b);
-      else if (b[0] === 0x89 && b[1] === 0x50) r = cleanPng(b);
-      else if (b[0] === 0x52 && b[8] === 0x57) r = cleanWebp(b);
-      else throw new Error(t("{name}: not a JPEG, PNG or WebP file", { name: file.name }));
+      const r = cleanImage(b);
+      if (!r) throw new Error(t("{name}: not a JPEG, PNG or WebP file", { name: file.name }));
       const blob = new Blob(r.parts, { type: file.type });
       const removed = file.size - blob.size;
       const ext = file.name.includes(".") ? file.name.slice(file.name.lastIndexOf(".")) : "";
       out.push({
         name: `${baseName(file.name)}-clean${ext}`, blob,
-        note: r.kinds.size ? t("removed {kinds} ({size})", { kinds: [...r.kinds].join(", "), size: formatBytes(removed) }) : t("no metadata found"),
+        note: r.kinds.size ? t("removed {kinds} ({size})", { kinds: [...r.kinds].map((k) => t(k)).join(", "), size: formatBytes(removed) }) : t("no metadata found"),
       });
     }
     return out;

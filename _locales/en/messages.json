@@ -12,7 +12,7 @@
     "message": "Open FileForge"
   },
   "menuImage": {
-    "message": "Edit image in FileForge"
+    "message": "Edit image"
   },
   "menuPdf": {
     "message": "Open PDF in FileForge"
@@ -31,5 +31,17 @@
   },
   "menuShotFull": {
     "message": "Screenshot the whole page"
+  },
+  "menuImageConvert": {
+    "message": "Convert to JPG, PNG or WebP"
+  },
+  "menuImageOcr": {
+    "message": "Read the text in the image"
+  },
+  "menuImageQr": {
+    "message": "Read the QR code"
+  },
+  "menuPageQr": {
+    "message": "QR code for this address"
   }
 }
