@@ -194,7 +194,7 @@ No build step, no framework, no dependencies to install.
 <https://zhukovskyi.space/tools/fileforge/app/> is the same app without the extension parts. `scripts/build_web_app.py` builds it into `web/`,
 and the author's site repo publishes that folder (`tools/sync_fileforge.py` there). The privacy policy the stores link to is
 <https://zhukovskyi.space/tools/fileforge/privacy.html>. The old address, <https://andronaft.github.io/FileForge/>, only forwards there now
-(the [pages workflow](.github/workflows/pages.yml) runs `scripts/build_site.py`, which now writes only the forwarding pages).
+(the [pages workflow](.github/workflows/pages.yml) runs `scripts/build_pages_redirect.py`).
 
 ## Publishing
 

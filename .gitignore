@@ -6,4 +6,5 @@ dist/
 - dist/
 site/
 web/
+pages/
 .playwright-mcp/

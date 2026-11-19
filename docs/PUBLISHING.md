@@ -27,7 +27,7 @@ store's dashboard, then re-run **Actions → publish → Run workflow** with the
 
 The web version lives at <https://zhukovskyi.space/tools/fileforge/app/>. After a release, publish it from the site repo:
 `cd ~/Desktop/my_space && python3 tools/sync_fileforge.py && ./deploy.sh`. The old GitHub Pages address
-only forwards there ([pages workflow](../.github/workflows/pages.yml) runs `scripts/build_site.py`); nothing to do there.
+only forwards there ([pages workflow](../.github/workflows/pages.yml) runs `scripts/build_pages_redirect.py`); nothing to do there.
 
 ## Where it is published
 

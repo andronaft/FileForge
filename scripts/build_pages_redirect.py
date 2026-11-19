@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Build what GitHub Pages serves into site/ (the pages workflow runs this): forwards to the web app's new home on zhukovskyi.space.
+"""Build what GitHub Pages serves into pages/ (the pages workflow runs this): forwards to the web app's new home on zhukovskyi.space.
 
 The web version moved from https://andronaft.github.io/FileForge/ to https://zhukovskyi.space/tools/fileforge/app/
 (scripts/build_web_app.py builds it; ~/Desktop/my_space/tools/sync_fileforge.py publishes it).
 GitHub Pages cannot send a 301, so every old address gets a small page with rel=canonical, a meta refresh and a
 script redirect that keeps ?tool= and the #tool fragment:
 
-  site/index.html, site/app/index.html     → the app
-  site/privacy.html                        → the privacy policy (the store listings still link here)
-  site/404.html                            → any other old address (a tool file, an icon) goes to the app
-  site/app/sw.js                           → replaces the old offline worker: clears its caches, unregisters itself
+  pages/index.html, pages/app/index.html   → the app
+  pages/privacy.html                       → the privacy policy (the store listings still link here)
+  pages/404.html                           → any other old address (a tool file, an icon) goes to the app
+  pages/app/sw.js                          → replaces the old offline worker: clears its caches, unregisters itself
                                              and reloads open tabs, so installed copies reach the redirect
 """
 import pathlib
 import shutil
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-OUT = ROOT / "site"
+OUT = ROOT / "pages"
 NEW = "https://zhukovskyi.space/tools/fileforge"
 
 

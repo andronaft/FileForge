@@ -21,7 +21,10 @@ jobs:
       - run: python3 scripts/package.py
       - name: The checks addons.mozilla.org runs on upload
         run: npx --yes web-ext@10 lint --source-dir dist/firefox
-      - run: python3 scripts/build_site.py
+      - name: Build the web app and the GitHub Pages forwarding pages
+        run: |
+          python3 scripts/build_web_app.py
+          python3 scripts/build_pages_redirect.py
       - uses: actions/upload-artifact@v7
         with:
           name: fileforge-extension
