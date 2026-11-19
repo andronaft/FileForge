@@ -69,6 +69,8 @@ export default {
   "Source code": "Вихідний код",
   Privacy: "Конфіденційність",
   "Report a problem": "Повідомити про проблему",
+  "Made by Dre Dev": "Зроблено Dre Dev",
+  "Made by Dre Dev: more free tools and apps →": "Зроблено Dre Dev: більше безкоштовних інструментів і додатків →",
   Language: "Мова",
   Theme: "Тема",
   "Follow the system": "Як у системі",

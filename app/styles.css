@@ -159,6 +159,9 @@ select { padding-right: 28px; appearance: none; background-image: linear-gradien
 .chip:hover { border-color: var(--accent); }
 .home-foot { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--muted); font-size: 13px; }
 .home-foot span { display: inline-flex; align-items: center; gap: 4px; }
+.home-foot .made-by { margin-left: auto; color: inherit; }
+.app-tip { margin: 12px 0 0; color: var(--muted); font-size: 13px; }
+.app-tip a { white-space: nowrap; }
 
 /* ---------- tool page ---------- */
 .tool-head { display: flex; gap: 14px; align-items: flex-start; }

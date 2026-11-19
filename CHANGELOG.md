@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- A "Made by Dre Dev" link on the home screen and in Settings, to the author's site with more free tools and apps.
+- After HEIC to JPG, Images to PDF, Scan document photo and Sign & fill PDF, one line about the author's phone app
+  for the same job (RoofCalc, SiteLog, PaintBid). English interface only; plain links, nothing loads until clicked.
+
+### Changed
+
+- The web version moved to https://zhukovskyi.space/tools/fileforge/app/; the old GitHub Pages address forwards there.
+
 ## 1.7.0
 
 ### Added
