@@ -16,7 +16,7 @@ Local-first file tools for the browser: crop, resize, rotate, compress and conve
 | --- | --- |
 | **Chrome, Edge, Brave, Opera** | [Chrome Web Store](https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn) |
 | **Firefox** | [Firefox Add-ons](https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/) |
-| **Any browser, no install** | [andronaft.github.io/FileForge](https://andronaft.github.io/FileForge/) — installable as an app, works offline |
+| **Any browser, no install** | [zhukovskyi.space/tools/fileforge/app](https://zhukovskyi.space/tools/fileforge/app/) — installable as an app, works offline |
 
 After installing: click the toolbar icon or press **Alt+Shift+F**, right-click any image → **Edit image in FileForge**, or right-click a PDF link → **Open PDF in FileForge**.
 
@@ -191,9 +191,10 @@ No build step, no framework, no dependencies to install.
 
 ## Web version
 
-<https://andronaft.github.io/FileForge/> is the same app without the extension parts, deployed from `main`
-by the [pages workflow](.github/workflows/pages.yml). The privacy policy the stores link to is
-<https://andronaft.github.io/FileForge/privacy.html>.
+<https://zhukovskyi.space/tools/fileforge/app/> is the same app without the extension parts. `scripts/build_web_app.py` builds it into `web/`,
+and the author's site repo publishes that folder (`tools/sync_fileforge.py` there). The privacy policy the stores link to is
+<https://zhukovskyi.space/tools/fileforge/privacy.html>. The old address, <https://andronaft.github.io/FileForge/>, only forwards there now
+(the [pages workflow](.github/workflows/pages.yml) runs `scripts/build_site.py`, which now writes only the forwarding pages).
 
 ## Publishing
 

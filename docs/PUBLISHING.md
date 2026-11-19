@@ -25,8 +25,9 @@ A store without secrets is skipped with a notice, and one store failing doesn't 
 If a version is still waiting for review, a store refuses a new upload; wait for the review or cancel it in that
 store's dashboard, then re-run **Actions → publish → Run workflow** with the tag and the store.
 
-The web version at <https://andronaft.github.io/FileForge/> is deployed by the
-[pages workflow](../.github/workflows/pages.yml) on every push to `main`; nothing to do there.
+The web version lives at <https://zhukovskyi.space/tools/fileforge/app/>. After a release, publish it from the site repo:
+`cd ~/Desktop/my_space && python3 tools/sync_fileforge.py && ./deploy.sh`. The old GitHub Pages address
+only forwards there ([pages workflow](../.github/workflows/pages.yml) runs `scripts/build_site.py`); nothing to do there.
 
 ## Where it is published
 
@@ -34,7 +35,7 @@ The web version at <https://andronaft.github.io/FileForge/> is deployed by the
 | --- | --- | --- |
 | Chrome Web Store | <https://chromewebstore.google.com/detail/lmnnhcoblacbhagicaambfbbmbpnachn> | item ID `lmnnhcoblacbhagicaambfbbmbpnachn` (repository variable `CWS_EXTENSION_ID`, already set) |
 | addons.mozilla.org | <https://addons.mozilla.org/firefox/addon/fileforge-image-pdf-file-tools/> | add-on ID `fileforge@andronaft.github.io`, slug `fileforge-image-pdf-file-tools` |
-| Web | <https://andronaft.github.io/FileForge/> | deployed from `main` by the pages workflow |
+| Web | <https://zhukovskyi.space/tools/fileforge/app/> | synced and deployed from the site repo (`tools/sync_fileforge.py`) |
 
 Both listings were created by hand with version 0.3.0. From here on the release workflow can update them,
 once the secrets below exist; until then it still creates the GitHub Release and prints a notice per store.
@@ -48,7 +49,7 @@ Done for the first version (see above). Kept for reference: the first version ha
 2. **New item** → upload `dist/fileforge-chrome-<version>.zip` (from `python3 scripts/package.py`).
 3. Fill in the listing from [`store-listing.md`](store-listing.md): description, category, screenshots,
    icon, privacy practices (single purpose, permission justifications, "does not collect user data"),
-   privacy policy URL `https://andronaft.github.io/FileForge/privacy.html`.
+   privacy policy URL `https://zhukovskyi.space/tools/fileforge/privacy.html`.
 4. Submit for review. The item's 32-letter ID appears in the dashboard URL.
 5. In this repository: _Settings → Secrets and variables → Actions → Variables → New repository variable_
    `CWS_EXTENSION_ID` = that ID.

@@ -5,4 +5,5 @@ dist/
 .claude/
 - dist/
 site/
+web/
 .playwright-mcp/
