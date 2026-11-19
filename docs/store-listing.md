@@ -104,7 +104,7 @@ PRIVACY AND PERMISSIONS
 Everything runs locally: there is no server, no account, no analytics and no network requests. The extension needs only the contextMenus permission for the right-click entry and sidePanel to show itself in the side panel. When you use "Edit image in FileForge" on a page, it asks for access to that one site so it can read the image, and only then.
 
 Open source: https://github.com/andronaft/FileForge
-Web version: https://andronaft.github.io/FileForge/
+Web version: https://zhukovskyi.space/tools/fileforge/app/
 
 ## Description (Ukrainian · українська)
 
@@ -168,7 +168,7 @@ PDF
 Усе виконується локально: немає сервера, облікових записів, аналітики й мережевих запитів. Розширенню потрібен лише дозвіл contextMenus для пункту в контекстному меню та sidePanel, щоб показуватися в бічній панелі. Доступ до сайту запитується для одного сайту й лише тоді, коли ви обираєте пункт меню на ньому.
 
 Відкритий код: https://github.com/andronaft/FileForge
-Веб-версія: https://andronaft.github.io/FileForge/
+Веб-версія: https://zhukovskyi.space/tools/fileforge/app/
 
 ## Single purpose
 
@@ -189,7 +189,7 @@ Does not collect or transmit any user data.
 
 ## Privacy policy URL
 
-https://andronaft.github.io/FileForge/privacy.html
+https://zhukovskyi.space/tools/fileforge/privacy.html
 
 ## Assets
 

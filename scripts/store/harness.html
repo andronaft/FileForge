@@ -111,7 +111,7 @@ const SHOTS = {
   },
   async watermark() { drop([await photo()]); await until(() => $(".options")); setInput("Text", "© Andrii Photography"); setInput("Opacity", "60"); await sleep(600); },
   async favicons() { drop([await logo()]); await until(() => $(".options")); await run(); },
-  async qr() { await until(() => $(".options textarea")); textarea("https://andronaft.github.io/FileForge/"); await until(() => $(".qr-preview canvas")); await sleep(300); },
+  async qr() { await until(() => $(".options textarea")); textarea("https://zhukovskyi.space/tools/fileforge/"); await until(() => $(".qr-preview canvas")); await sleep(300); },
   async "pdf-merge"() {
     drop([await pdf("contract.pdf", "Service agreement", 3, win.PDFLib.rgb(0.1, 0.2, 0.45)), await pdf("appendix-A.pdf", "Appendix A", 2, win.PDFLib.rgb(0.6, 0.15, 0.3)), await pdf("invoice-2026-10.pdf", "Invoice", 1, win.PDFLib.rgb(0.1, 0.45, 0.3))]);
     await until(() => $$(".files li").length === 3); await sleep(600);

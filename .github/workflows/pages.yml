@@ -1,7 +1,8 @@
 name: pages
 
-# Publishes the web version to GitHub Pages on every push to main:
-# https://andronaft.github.io/FileForge/ (the app) and .../privacy.html (the privacy policy the stores link to).
+# The web version lives at https://zhukovskyi.space/tools/fileforge/app/ (scripts/build_web_app.py, published by the
+# site repo's tools/sync_fileforge.py). GitHub Pages only serves pages that forward the old
+# https://andronaft.github.io/FileForge/ addresses there, rebuilt on every push to main.
 on:
   push:
     branches: [main]
@@ -24,10 +25,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
-      - run: python3 scripts/build_site.py
+      - run: python3 scripts/build_pages_redirect.py
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v4
         with:
-          path: site
+          path: pages
       - uses: actions/deploy-pages@v4
         id: deployment

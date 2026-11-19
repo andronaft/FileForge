@@ -23,8 +23,8 @@ Files (all inside the repository folder `/Users/andrii/Desktop/FileForge`):
 
 Links used in both stores:
 
-- Homepage / web version: `https://andronaft.github.io/FileForge/`
-- Privacy policy: `https://andronaft.github.io/FileForge/privacy.html`
+- Homepage / web version: `https://zhukovskyi.space/tools/fileforge/`
+- Privacy policy: `https://zhukovskyi.space/tools/fileforge/privacy.html`
 - Support / issues: `https://github.com/andronaft/FileForge/issues`
 - Source: `https://github.com/andronaft/FileForge`
 
@@ -84,7 +84,7 @@ PRIVACY AND PERMISSIONS
 Everything runs locally: there is no server, no account, no analytics and no network requests. The extension needs only the contextMenus permission for the right-click entry. When you use "Edit image in FileForge" on a page, it asks for access to that one site so it can read the image, and only then.
 
 Open source: https://github.com/andronaft/FileForge
-Web version: https://andronaft.github.io/FileForge/
+Web version: https://zhukovskyi.space/tools/fileforge/app/
 ```
 
 **Category**: `Productivity`, subcategory `Tools`.
@@ -126,7 +126,7 @@ PDF
 Усе виконується локально: немає сервера, облікових записів, аналітики й мережевих запитів. Розширенню потрібен лише дозвіл contextMenus для пункту в контекстному меню. Доступ до сайту запитується для одного сайту й лише тоді, коли ви обираєте пункт меню на ньому.
 
 Відкритий код: https://github.com/andronaft/FileForge
-Веб-версія: https://andronaft.github.io/FileForge/
+Веб-версія: https://zhukovskyi.space/tools/fileforge/app/
 ```
 
 **Graphic assets** **[ANDRII uploads]**:
@@ -141,7 +141,7 @@ PDF
 **Additional fields**:
 
 - Official URL: leave as is (it needs a verified site in Search Console; skip).
-- Homepage URL: `https://andronaft.github.io/FileForge/`
+- Homepage URL: `https://zhukovskyi.space/tools/fileforge/`
 - Support URL: `https://github.com/andronaft/FileForge/issues`
 - Mature content: `No`.
 
@@ -190,7 +190,7 @@ three certifications:
 - I do not use or transfer user data for purposes that are unrelated to my item's single purpose
 - I do not use or transfer user data to determine creditworthiness or for lending purposes
 
-**Privacy policy URL**: `https://andronaft.github.io/FileForge/privacy.html`
+**Privacy policy URL**: `https://zhukovskyi.space/tools/fileforge/privacy.html`
 
 Click **Save draft**.
 
@@ -304,7 +304,7 @@ reviewer explain it. Continue.
 
   Storage. Nothing is written to disk except the files you choose to download.
 
-  Full text: https://andronaft.github.io/FileForge/privacy.html
+  Full text: https://zhukovskyi.space/tools/fileforge/privacy.html
   Questions: https://github.com/andronaft/FileForge/issues
   ```
 
@@ -322,7 +322,7 @@ Click **Submit Version**. The page then says the version is queued for review.
 
 Open `https://addons.mozilla.org/developers/addon/fileforge/edit` (or click **Manage Listing**).
 
-**Edit Product Page → Basic Information**: set **Homepage** to `https://andronaft.github.io/FileForge/`. Save.
+**Edit Product Page → Basic Information**: set **Homepage** to `https://zhukovskyi.space/tools/fileforge/`. Save.
 
 **Images** **[ANDRII uploads]**:
 
@@ -341,7 +341,7 @@ language tabs or an "Add a new localization" link above the field). Add **Укр
 - Description: the Ukrainian text from section 1.2 above, plus this last paragraph:
 
   ```
-  HEIC → JPG доступний у веб-версії https://andronaft.github.io/FileForge/, бо декодеру потрібна ізольована сторінка, якої немає у Firefox.
+  HEIC → JPG доступний у веб-версії https://zhukovskyi.space/tools/fileforge/app/, бо декодеру потрібна ізольована сторінка, якої немає у Firefox.
   ```
 
 Save Changes.
