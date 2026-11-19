@@ -191,6 +191,24 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if
 // pop-up window of the web version. The button in the top bar switches between that and a full tab.
 const ext = globalThis.browser ?? globalThis.chrome;
 const isExtension = !!ext?.runtime?.id;
+
+// ---------- made by Dre Dev ----------
+// One quiet link to the author's site, and after a few tools one line about the author's phone app for the same job.
+// Plain links the user clicks; nothing is loaded from the site until then.
+const SITE = "https://zhukovskyi.space";
+const siteUrl = (path, campaign) => `${SITE}${path}?utm_source=fileforge&utm_medium=${isExtension ? "extension" : "web"}&utm_campaign=${campaign}`;
+const APP_TIPS = {
+  "images-to-pdf": ["Job-site photos into a daily report? SiteLog makes the PDF report on your phone.", "SiteLog", "/apps/sitelog/"],
+  "doc-scan": ["Construction daily reports and punch lists with photos, emailed as a PDF: SiteLog.", "SiteLog", "/apps/sitelog/"],
+  "pdf-sign": ["Sending painting quotes? PaintBid prices the rooms on site and makes the PDF to sign.", "PaintBid", "/apps/paintbid/"],
+  heic: ["Photos of a roof job? RoofCalc prices the roof from the driveway and makes the PDF quote.", "RoofCalc", "/apps/roofcalc/"],
+};
+function appTip(toolId) {
+  const tip = APP_TIPS[toolId];
+  if (!tip || getLang() !== "en") return null; // the apps are in English, for US trades
+  const [text, name, path] = tip;
+  return el("p", { class: "app-tip" }, [text + " ", el("a", { href: siteUrl(path, toolId), target: "_blank", rel: "noopener", text: `${name} →` })]);
+}
 const sideView = new URLSearchParams(location.search).get("view") === "side";
 if (sideView) document.documentElement.dataset.view = "side";
 const viewBtn = document.getElementById("viewBtn");
@@ -338,7 +356,8 @@ function renderSettings() {
       t("FileForge {version} · everything runs on your device, nothing is uploaded.", { version: VERSION }), " ",
       el("a", { href: "https://github.com/andronaft/FileForge", target: "_blank", rel: "noopener", text: "Source code" }), " · ",
       el("a", { href: "https://github.com/andronaft/FileForge/blob/main/PRIVACY.md", target: "_blank", rel: "noopener", text: "Privacy" }), " · ",
-      el("a", { href: "https://github.com/andronaft/FileForge/issues", target: "_blank", rel: "noopener", text: "Report a problem" }),
+      el("a", { href: "https://github.com/andronaft/FileForge/issues", target: "_blank", rel: "noopener", text: "Report a problem" }), " · ",
+      el("a", { href: siteUrl("/", "settings"), target: "_blank", rel: "noopener", text: t("Made by Dre Dev") }),
     ]),
   );
 }
@@ -467,6 +486,7 @@ function renderHome(keepScroll = false) {
       el("span", {}, [icon("shield", 16), " ", t("Private by design: no server, no account, no analytics.")]),
       el("span", {}, [icon("wifi_off", 16), " ", t("Works offline once loaded.")]),
       el("span", { text: VERSION ? `v${VERSION}` : "" }),
+      el("a", { class: "made-by", href: siteUrl("/", "home"), target: "_blank", rel: "noopener", text: t("Made by Dre Dev: more free tools and apps →") }),
     ]),
   ].filter(Boolean));
   if (!keepScroll) window.scrollTo(0, 0);
@@ -988,6 +1008,8 @@ function renderResults() {
     } }));
   }
   if (actions.childElementCount) ui.results.append(actions);
+  const tip = appTip(state.tool.id);
+  if (tip) ui.results.append(tip);
 }
 
 // ---------- progress ----------
