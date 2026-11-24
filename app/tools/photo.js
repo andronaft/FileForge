@@ -889,7 +889,7 @@ const transparentTool = {
   description: "Make a plain background transparent: logos, signatures, stamps, icons and product shots on white or any single colour. Click the image to pick the colour to remove.",
   keywords: ["remove background", "background remover", "transparent png", "cut out", "white background", "logo", "signature", "alpha", "прозорий фон", "прибрати фон", "видалити фон", "убрать фон"],
   accept: "image/*",
-  hint: "Images with a plain, single-colour background; several at once use the same settings",
+  hint: "Images with a plain, single-colour background; several at once use the same settings. For photos with a busy background use Remove background",
   runLabel: "Remove background",
   renderOptions(root, files) {
     const colour = el("input", { type: "color", value: "#ffffff", "data-noremember": "" });

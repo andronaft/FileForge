@@ -6,6 +6,7 @@ import { insights } from "./insights.js";
 import { imageTools } from "./tools/image.js";
 import { photoTools } from "./tools/photo.js";
 import { ocrTools } from "./tools/ocr.js";
+import { rembgTools } from "./tools/rembg.js";
 import { officeTools } from "./tools/office.js";
 import { videoTools } from "./tools/video.js";
 import { videoEditTools } from "./tools/videoedit.js";
@@ -30,7 +31,7 @@ for (const n of document.querySelectorAll("[aria-label]")) n.setAttribute("aria-
 for (const n of document.querySelectorAll("[title]")) n.title = t(n.title);
 
 const groups = [
-  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...photoTools, ...ocrTools, ...imageTools.slice(1), ...gifTools, ...qrTools] },
+  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...rembgTools, ...photoTools, ...ocrTools, ...imageTools.slice(1), ...gifTools, ...qrTools] },
   { id: "video", title: "Video & audio", icon: "video", tools: [...videoEditTools, ...videoTools, ...audioTools] },
   { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools.slice(0, 1), ...packTools, ...pdfTools.slice(1), ...pdfMoreTools] },
   { id: "office", title: "Word & Excel", icon: "office", tools: officeTools },
@@ -432,7 +433,7 @@ function requestedToolId() {
   return location.hash.replace(/^#/, "") || "home";
 }
 
-const POPULAR = ["pdf-merge", "pdf-pack", "compress", "video-compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
+const POPULAR = ["pdf-merge", "pdf-pack", "remove-bg", "compress", "video-compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
 
 function toolCard(tool) {
   return el("a", { class: "tool-card", href: `#${tool.id}`, "data-id": tool.id }, [

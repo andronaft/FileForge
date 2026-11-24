@@ -48,12 +48,13 @@ index.write_text(html)
     ],
 }, indent=2) + "\n")
 
-# The OCR engine and its language models are ~8 MB that most visits never need: they are left out of the
-# precache and cached the first time the OCR tool asks for them (the LAZY cache survives version updates).
-# Bump the number in LAZY below whenever vendor/ocr changes, or returning visitors keep the old files.
-LAZY_PREFIX = "vendor/ocr/"
+# The OCR engine and its language models (~8 MB) and the background-removal model with ONNX Runtime (~75 MB) are
+# files most visits never need: they are left out of the precache and cached the first time their tool asks for
+# them (the LAZY cache survives version updates).
+# Bump the number in LAZY below whenever vendor/ocr or vendor/rembg changes, or returning visitors keep the old files.
+LAZY_PREFIXES = ("vendor/ocr/", "vendor/rembg/")
 files = sorted(p for p in SITE.rglob("*") if p.is_file() and p.suffix not in {".webmanifest"} and p.name != "sw.js"
-               and not p.relative_to(SITE).as_posix().startswith(LAZY_PREFIX))
+               and not p.relative_to(SITE).as_posix().startswith(LAZY_PREFIXES))
 # "sw2" stands for the worker code below: change it when that code changes, so the cache name changes too.
 digest = hashlib.sha256(b"sw2" + b"".join(p.read_bytes() for p in files)).hexdigest()[:12]
 # "./" is the address people actually open (…/app/, the manifest's start_url): without it nothing starts offline.
@@ -71,7 +72,7 @@ self.addEventListener("activate", (e) => {{
 self.addEventListener("fetch", (e) => {{
   if (e.request.method !== "GET") return;
   e.respondWith(caches.match(e.request, {{ ignoreSearch: true }}).then((hit) => hit || fetch(e.request).then((res) => {{
-    if (res.ok && new URL(e.request.url).pathname.includes("/{LAZY_PREFIX}")) {{ const copy = res.clone(); caches.open(LAZY).then((c) => c.put(e.request, copy)); }}
+    if (res.ok && {json.dumps(["/" + x for x in LAZY_PREFIXES])}.some((p) => new URL(e.request.url).pathname.includes(p))) {{ const copy = res.clone(); caches.open(LAZY).then((c) => c.put(e.request, copy)); }}
     return res;
   }}).catch((err) => {{
     // Offline and not in the cache: any page address inside the app still opens the app itself.

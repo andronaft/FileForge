@@ -178,7 +178,7 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 - If the form asks why the CSP has `'wasm-unsafe-eval'`:
 
   ```
-  The extension ships three WebAssembly engines inside the package: the HEIC (iPhone photo) decoder libheif (vendor/libheif-bundle.js), the PDF password and repair engine qpdf (vendor/qpdf.wasm) and the OCR engine Tesseract with its English and Ukrainian models (vendor/ocr/). 'wasm-unsafe-eval' only lets the extension compile that bundled WebAssembly; no JavaScript eval is allowed and no code or data is loaded from the network.
+  The extension ships four WebAssembly engines inside the package: the HEIC (iPhone photo) decoder libheif (vendor/libheif-bundle.js), the PDF password and repair engine qpdf (vendor/qpdf.wasm), the OCR engine Tesseract with its English and Ukrainian models (vendor/ocr/) and ONNX Runtime Web with the ISNet background-removal model (vendor/rembg/). 'wasm-unsafe-eval' only lets the extension compile that bundled WebAssembly; no JavaScript eval is allowed and no code or data is loaded from the network.
   ```
 
 **Are you using remote code?**: `No, I am not using remote code`.

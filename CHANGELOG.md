@@ -1,9 +1,18 @@
 # Changelog
 
-## Unreleased
+## 1.8.0
 
 ### Added
 
+- **Remove background**: cut out people, pets, products and cars from any photo, even on a busy background, like
+  remove.bg but on your device. Save the cut-out transparent (PNG or WebP), on white or any colour, in front of a
+  blurred copy of the photo or on another picture; JPEG too. Soft edges for hair and fur or sharp ones for products,
+  crop to the subject with a margin, a square picture for marketplaces and profile photos, and a brush to restore
+  or erase parts by hand (undo, reset, compare with the original). Several photos at once.
+  The neural network is ISNet (general use, Apache-2.0), stored with 8-bit weights (46 MB, masks practically identical
+  to the full 176 MB model) and run by ONNX Runtime Web 1.31.1 (MIT): on the graphics card through WebGPU, otherwise
+  on the processor. A graphics card that stops answering hands the work to the processor after 75 seconds. The model
+  loads only when the tool is opened; the web version caches it after the first use instead of with the app.
 - A "Made by Dre Dev" link on the home screen and in Settings, to the author's site with more free tools and apps.
 - After HEIC to JPG, Images to PDF, Scan document photo and Sign & fill PDF, one line about the author's phone app
   for the same job (RoofCalc, SiteLog, PaintBid). English interface only; plain links, nothing loads until clicked.

@@ -8,7 +8,7 @@ FileForge: image, PDF & file tools
 
 ## Summary (max 132 characters)
 
-78 image, PDF, video and file tools: crop, compress, convert, merge, split, redact, QR, diff, forms. 100% on your device, in EN/UK.
+79 image, PDF, video and file tools: remove background, crop, compress, convert, merge, split, QR. 100% on your device, EN/UK.
 
 ## Category
 
@@ -31,6 +31,7 @@ IMAGES
 • ID and passport photos: 35 × 45, 3 × 4, 2 × 2 in, as one photo or a 10 × 15 / A4 print sheet
 • Scan document photos: straighten the page, make the paper white and save a PDF
 • Image to text (OCR): read photos, screenshots and scanned PDFs, save .txt or a searchable PDF (English and Ukrainian built in)
+• Remove background from any photo with an AI model that runs on your device: people, pets, products; transparent, white, colour, blurred or another picture
 • Transparent background for logos, signatures and product shots on a plain colour
 • Video to GIF, video to images and video to MP3 (or WAV)
 • Right-click any page → screenshot the visible part or the whole page, straight into the annotation tool
@@ -111,6 +112,7 @@ Web version: https://zhukovskyi.space/tools/fileforge/app/
 FileForge — набір інструментів для щоденної роботи з файлами, який працює повністю у вашому браузері. Нічого нікуди не завантажується: фото й документи не залишають ваш комп'ютер.
 
 ЗОБРАЖЕННЯ
+• Прибрати фон з будь-якого фото нейромережею просто на вашому пристрої: люди, тварини, товари; прозорий, білий, кольоровий, розмитий фон або інша картинка
 • Обрізка перетягуванням або точними числами, пресети співвідношення сторін
 • Зміна розміру в пікселях або відсотках, пресети 4K / Full HD / HD / Instagram
 • Поворот і віддзеркалення
@@ -181,7 +183,7 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 - **sidePanel**: shows the FileForge page in Chrome's side panel when the user picks "Open in side panel" or the ◨ button; the page is the extension's own, and the permission gives no access to web pages.
 - **scripting**: only used when "Edit image in FileForge" is chosen on an image that exists solely inside the page (a `blob:` URL, e.g. an image editor's canvas or a pasted screenshot). A one-line script runs in that tab, after the user granted that site, to read that one image's bytes. No content scripts are registered and nothing runs on pages the user did not pick.
 - **Optional host permissions (`<all_urls>`)**: requested for a single site, only when the user chooses one of those menu items there, so the extension can fetch that image or PDF. Never requested up front.
-- **`'wasm-unsafe-eval'` in the CSP**: lets the extension compile the WebAssembly it ships with: the HEIC decoder (libheif, `vendor/libheif-bundle.js`), the PDF password and repair engine (qpdf, `vendor/qpdf.wasm`) and the OCR engine (Tesseract, `vendor/ocr/`). JavaScript `eval` stays forbidden and no code or data is loaded from the network; the OCR language models are inside the package.
+- **`'wasm-unsafe-eval'` in the CSP**: lets the extension compile the WebAssembly it ships with: the HEIC decoder (libheif, `vendor/libheif-bundle.js`), the PDF password and repair engine (qpdf, `vendor/qpdf.wasm`) the OCR engine (Tesseract, `vendor/ocr/`) and ONNX Runtime for the background-removal model (`vendor/rembg/`). JavaScript `eval` stays forbidden and no code or data is loaded from the network; the OCR language models and the background model are inside the package.
 
 ## Data usage
 
