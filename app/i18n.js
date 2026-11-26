@@ -11,6 +11,19 @@ const LOADERS = { uk: () => import("./i18n/uk.js") };
 export function getLang() { return lang; }
 
 export function detectLang() {
+  // ?lang=uk in the address (the site's Ukrainian pages link with it) wins and is remembered like a choice in Settings.
+  const params = new URLSearchParams(location.search);
+  const asked = params.get("lang");
+  if (params.has("lang")) {
+    // Taken once: left in the address it would undo a later change of language in Settings (which reloads).
+    params.delete("lang");
+    const rest = params.toString();
+    try { history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : "") + location.hash); } catch (_) { /* ignore */ }
+  }
+  if (asked && LANGS[asked]) {
+    try { localStorage.setItem("fileforge.lang", asked); } catch (_) { /* ignore */ }
+    return asked;
+  }
   let saved = null;
   try { saved = localStorage.getItem("fileforge.lang"); } catch (_) { /* ignore */ }
   if (saved && LANGS[saved]) return saved;

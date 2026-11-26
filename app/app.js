@@ -435,6 +435,45 @@ function requestedToolId() {
 
 const POPULAR = ["pdf-merge", "pdf-pack", "remove-bg", "compress", "video-compress", "pdf-sign", "doc-scan", "ocr", "images-to-pdf", "pdf-compress", "heic", "pdf-unlock", "word", "video-gif"];
 
+// What people usually do with a tool's results next; shown as buttons under the results (only tools that take them).
+const NEXT_STEPS = {
+  heic: ["compress", "metadata", "images-to-pdf"],
+  "remove-bg": ["resize", "compress", "frame"],
+  crop: ["compress", "resize", "watermark"],
+  resize: ["compress", "watermark", "metadata"],
+  rotate: ["compress", "crop"],
+  convert: ["compress", "metadata"],
+  compress: ["metadata", "images-to-pdf", "zip-create"],
+  adjust: ["compress", "watermark"],
+  "doc-scan": ["pdf-compress", "pdf-sign", "pdf-merge"],
+  "id-photo": ["compress", "images-to-pdf"],
+  annotate: ["compress", "redact"],
+  redact: ["compress", "metadata"],
+  "images-to-pdf": ["pdf-compress", "pdf-merge", "pdf-sign"],
+  "pdf-merge": ["pdf-compress", "pdf-page-numbers", "pdf-sign"],
+  "pdf-split": ["pdf-compress", "pdf-merge"],
+  "pdf-reorder": ["pdf-compress", "pdf-page-numbers"],
+  "pdf-rotate": ["pdf-compress", "pdf-merge"],
+  "pdf-delete-pages": ["pdf-compress", "pdf-merge"],
+  "pdf-compress": ["pdf-metadata", "pdf-protect"],
+  "pdf-sign": ["pdf-compress", "pdf-protect", "pdf-merge"],
+  "pdf-edit": ["pdf-sign", "pdf-compress", "pdf-protect"],
+  "pdf-form": ["pdf-sign", "pdf-compress"],
+  "pdf-unlock": ["pdf-compress", "pdf-to-word", "pdf-merge"],
+  "pdf-pack": ["pdf-protect", "pdf-metadata"],
+  word: ["pdf-compress", "pdf-sign", "pdf-merge"],
+  "pdf-to-images": ["compress", "zip-create"],
+  "video-trim": ["video-compress", "video-gif", "audio-extract"],
+  "video-convert": ["video-compress", "video-trim"],
+  "video-compress": ["video-gif", "audio-extract"],
+  "video-gif": ["gif-compress"],
+  "images-to-gif": ["gif-compress"],
+  "audio-extract": ["audio-edit"],
+  "audio-edit": ["zip-create"],
+  "gif-compress": ["zip-create"],
+  "pdf-to-word": ["zip-create"],
+};
+
 function toolCard(tool) {
   return el("a", { class: "tool-card", href: `#${tool.id}`, "data-id": tool.id }, [
     el("span", { class: "tool-card-icon" }, [icon(tool.icon || tool.id, 22)]),
@@ -447,7 +486,7 @@ function renderHome(keepScroll = false) {
   stopRun();
   state.tool = null;
   state.results = [];
-  document.title = "FileForge";
+  document.title = t("FileForge: free PDF, image & video tools that never upload your files");
   renderNav();
   const search = el("button", { type: "button", class: "home-search", onclick: () => openPalette() }, [icon("search"), el("span", { text: t("Search {n} tools…", { n: tools.length }) }), el("kbd", { text: `${MOD} K` })]);
   const fileInput = el("input", { type: "file", hidden: true, multiple: true, onchange: () => { openFiles([...fileInput.files]); fileInput.value = ""; } });
@@ -562,7 +601,12 @@ function mount() {
   main.replaceChildren(
     el("section", { class: "tool-head" }, [
       el("span", { class: "tool-head-icon" }, [icon(tool.icon || tool.id, 26)]),
-      el("div", { class: "tool-head-text" }, [el("h1", { text: tool.title }), el("p", { text: tool.description })]),
+      el("div", { class: "tool-head-text" }, [
+        el("h1", { text: tool.title }),
+        el("p", { text: tool.description }),
+        // The point of FileForge, said where the file goes in: nothing here talks to a server.
+        el("span", { class: "private-badge", title: "FileForge has no server: the file is read and processed by this browser tab only, even offline." }, [icon("shield", 14), t("On your device · nothing is uploaded")]),
+      ]),
       favButton(tool),
     ]),
     dropzone,
@@ -999,14 +1043,20 @@ function renderResults() {
     const liked = [...favIds(), ...recentIds(), ...POPULAR];
     const rank = (x) => { const i = liked.indexOf(x.id); return i < 0 ? liked.length : i; };
     next.sort((a, b) => rank(a) - rank(b));
-    const pick = el("select", { "aria-label": "Continue in" }, next.map((x) => el("option", { value: x.id, text: x.title })));
-    actions.append(el("span", { class: "stat", text: "Continue in" }), pick, el("button", { type: "button", text: "Open", class: "continue", onclick: () => {
-      const files = asFiles;
+    const continueIn = (id) => {
       state.files = []; // the results replace the inputs
-      history.replaceState(null, "", `${location.pathname}${location.search}#${pick.value}`);
+      history.replaceState(null, "", `${location.pathname}${location.search}#${id}`);
       mount();
-      addFiles(files);
-    } }));
+      addFiles(asFiles);
+    };
+    // The usual next job for this tool's results (HEIC → compress, remove background → resize…) as one-click buttons.
+    const usual = (NEXT_STEPS[state.tool.id] || []).map((id) => next.find((x) => x.id === id)).filter(Boolean).slice(0, 3);
+    if (usual.length) ui.results.append(el("div", { class: "next-steps" }, [
+      el("span", { class: "stat", text: "Next:" }),
+      ...usual.map((x) => el("button", { type: "button", class: "chip", onclick: () => continueIn(x.id) }, [icon(x.icon || x.id, 16), el("span", { text: x.title })])),
+    ]));
+    const pick = el("select", { "aria-label": "Continue in" }, next.map((x) => el("option", { value: x.id, text: x.title })));
+    actions.append(el("span", { class: "stat", text: "Continue in" }), pick, el("button", { type: "button", text: "Open", class: "continue", onclick: () => continueIn(pick.value) }));
   }
   if (actions.childElementCount) ui.results.append(actions);
   const tip = appTip(state.tool.id);
@@ -1200,6 +1250,29 @@ async function loadFromSrc() {
 if (document.documentElement.dataset.site && "serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
+// Files shared to the installed web app from a phone's Share sheet, parked by sw.js in the "fileforge-share" cache.
+async function loadShared() {
+  const params = new URLSearchParams(location.search);
+  if (!params.has("share")) return;
+  params.delete("share");
+  const rest = params.toString();
+  history.replaceState(null, "", location.pathname + (rest ? `?${rest}` : "") + location.hash);
+  if (!("caches" in window)) return;
+  try {
+    const cache = await caches.open("fileforge-share");
+    const files = [];
+    for (const req of await cache.keys()) {
+      const res = await cache.match(req);
+      if (!res) continue;
+      const blob = await res.blob();
+      const name = decodeURIComponent(res.headers.get("X-Name") || "file");
+      files.push(new File([blob], name, { type: blob.type || guessType(name) }));
+      await cache.delete(req);
+    }
+    if (files.length) openFiles(files);
+  } catch (_) { toast("Could not open the shared files. Save them and drop them here instead.", "error"); }
+}
+
 // Installed as an app, FileForge is an "Open with" target for images, PDFs and text files (file_handlers in the manifest).
 if ("launchQueue" in window) {
   window.launchQueue.setConsumer(async (launch) => {
@@ -1230,6 +1303,7 @@ document.querySelector(".skip-link")?.addEventListener("click", (e) => { e.preve
 }
 mount();
 loadFromSrc();
+loadShared();
 
 // In the side panel the background script hands over context-menu requests ("Edit image in FileForge") instead of
 // opening a tab: one waits in `pending` while the panel loads, later ones arrive as messages.

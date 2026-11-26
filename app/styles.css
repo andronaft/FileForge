@@ -141,6 +141,11 @@ select { padding-right: 28px; appearance: none; background-image: linear-gradien
 .hero { padding: 12px 0 4px; }
 .hero h1 { margin: 0 0 6px; font-size: 32px; letter-spacing: -.02em; line-height: 1.15; }
 .hero p { margin: 0 0 16px; color: var(--muted); max-width: 640px; font-size: 16px; }
+/* Placeholder cards shown while app.js loads (index.html); app.js replaces them with the real page. */
+.boot-skeleton { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-top: 8px; }
+.boot-skeleton span { height: 74px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; border: 1px solid var(--border); animation: boot-shimmer 1.4s ease-in-out infinite; }
+@keyframes boot-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .boot-skeleton span { animation: none; } }
 .home-search { width: 100%; max-width: 560px; justify-content: flex-start; gap: 10px; padding: 11px 14px; background: var(--surface); border-color: var(--border); color: var(--muted); font-size: 15px; box-shadow: var(--shadow); }
 .home-search kbd { margin-left: auto; }
 .home-group h2 { display: flex; align-items: center; gap: 8px; margin: 14px 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
@@ -169,6 +174,10 @@ select { padding-right: 28px; appearance: none; background-image: linear-gradien
 .tool-head h1 { margin: 0 0 2px; font-size: 24px; letter-spacing: -.01em; }
 .tool-head p { margin: 0; color: var(--muted); }
 .tool-head-text { flex: 1; min-width: 0; }
+.private-badge { display: inline-flex; align-items: center; gap: 5px; margin-top: 6px; padding: 2px 9px 2px 7px; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--ok); background: color-mix(in srgb, var(--ok) 11%, transparent); cursor: help; }
+.private-badge svg { flex: none; }
+.next-steps { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.next-steps .chip { cursor: pointer; font: inherit; font-size: 13px; }
 .fav-btn { flex: none; color: var(--muted); }
 .fav-btn[aria-pressed="true"] { color: #f5a623; }
 .fav-btn[aria-pressed="true"] .ic { fill: #f5a623; }

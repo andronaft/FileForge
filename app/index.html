@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="script-src 'self'; object-src 'none'; base-uri 'none'">
-  <title>FileForge</title>
-  <meta name="description" content="Crop, resize, compress and convert images (incl. HEIC), merge and split PDFs, Markdown to PDF, CSV/JSON tools. Everything runs on your device, nothing is uploaded.">
+  <title>FileForge: free PDF, image &amp; video tools that never upload your files</title>
+  <meta name="description" content="80+ free file tools in your browser: compress, merge, split and sign PDFs, HEIC to JPG, remove backgrounds, compress video, Word to PDF, OCR. Everything runs on your device: nothing is uploaded.">
   <meta name="theme-color" content="#1e222c">
   <meta name="fileforge-version" content="1.8.0">
   <meta property="og:title" content="FileForge: image, PDF & file tools">
@@ -34,7 +34,27 @@
       <input id="navFilter" class="nav-filter" type="search" placeholder="Filter tools… ( / )" data-i18n-placeholder="Filter tools… ( / )" aria-label="Filter tools" autocomplete="off">
       <div id="navList"></div>
     </nav>
-    <main class="main" id="main" tabindex="-1" style="outline: none"></main>
+    <main class="main" id="main" tabindex="-1" style="outline: none">
+      <!-- Shown until app.js renders the page (and to anything that reads the page without running it). -->
+      <section class="hero boot-hero">
+        <h1>Every file job, done on your device</h1>
+        <p>Free tools for PDFs, images, video, Word and Excel: compress, convert, merge, split, sign, remove backgrounds, read text. Nothing is uploaded, it works offline, and it stays free.</p>
+      </section>
+      <div class="boot-skeleton" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      <noscript>
+        <p>FileForge needs JavaScript: every tool runs in this page, on your device. Each tool also has its own page:</p>
+        <ul>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/compress-pdf/">Compress PDF</a></li>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/merge-pdf/">Merge PDF</a></li>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/heic-to-jpg/">HEIC to JPG</a></li>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/remove-background/">Remove background</a></li>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/compress-image/">Compress image</a></li>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/compress-video/">Compress video</a></li>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/word-to-pdf/">Word to PDF</a></li>
+          <li><a href="https://zhukovskyi.space/tools/fileforge/">All tools</a></li>
+        </ul>
+      </noscript>
+    </main>
   </div>
   <div id="dropOverlay" class="drop-overlay" hidden><div class="drop-overlay-box" data-i18n="Drop files to open them">Drop files to open them</div></div>
   <div id="toast" class="toast" role="status" aria-live="assertive" hidden></div>
