@@ -8,7 +8,7 @@ FileForge: image, PDF & file tools
 
 ## Summary (max 132 characters)
 
-79 image, PDF, video and file tools: remove background, crop, compress, convert, merge, split, QR. 100% on your device, EN/UK.
+85 image, PDF, video and file tools: remove background, crop, compress, convert, merge, split, QR. 100% on your device, EN/UK.
 
 ## Category
 
@@ -90,7 +90,7 @@ TEXT & DATA
 • Document pack: photos, scans and PDFs as one PDF under the size limit of an upload form (1, 2, 5, 10 MB)
 • Safe copy: write who a passport or ID copy is for across the whole page before you send it
 • Privacy check: what a photo, PDF, Word or Excel file gives away (location, author, comments, hidden sheets), and cleaned copies
-• Video: compress to fit WhatsApp, Telegram or e-mail (16 MB, 25 MB or your own limit), convert iPhone MOV and MKV to MP4, trim, rotate and crop to 9:16 for Reels and TikTok
+• Video: compress to fit WhatsApp, Telegram or e-mail (25 MB, 100 MB or your own limit), convert iPhone MOV and MKV to MP4, trim, rotate and crop to 9:16 for Reels and TikTok
 • Images to GIF; split a PDF into parts under a size limit; ID photos in exact pixels and KB for online applications
 
 EVERYDAY DETAILS

@@ -8,7 +8,7 @@
 [![CI](https://github.com/andronaft/FileForge/actions/workflows/ci.yml/badge.svg)](https://github.com/andronaft/FileForge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 79 tools, everything runs on your device. Nothing is uploaded anywhere.
+Local-first file tools for the browser: crop, resize, rotate, compress and convert images (including HEIC), merge/split/rotate PDFs, turn Markdown into PDF, convert CSV ⇄ JSON. 85 tools, everything runs on your device. Nothing is uploaded anywhere.
 
 ## Install
 
@@ -28,7 +28,7 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 
 ## Tools
 
-79 tools, all running in the page. Drop a folder or a ZIP into any tool and the files inside go straight in. Open the app and press **⌘K / Ctrl+K** to search them.
+85 tools, all running in the page. Drop a folder or a ZIP into any tool and the files inside go straight in. Open the app and press **⌘K / Ctrl+K** to search them.
 
 | Group | Tool | What it does |
 | --- | --- | --- |
@@ -52,17 +52,20 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | Images | Compare images | Pixel diff of two screenshots with tolerance, highlighted changes, a percentage and a side-by-side export |
 | Images | Watermark | Text in a corner, centred, or tiled diagonally, with live preview |
 | Images | Redact | Black out, pixelate or blur parts of a screenshot or photo, as many boxes as you need |
+| Images | Blur faces | Finds the faces in a photo with a small neural network (YuNet) on the device, group photos included; turn any face off, draw over a missed one or a number plate; blur, pixelate or solid black, batch |
 | Images | Remove metadata | Shows camera, date, exposure and GPS (with a map link), then strips EXIF, GPS, XMP, IPTC, comments and embedded previews without re-encoding; the photo stays upright |
 | Images | Colour palette | Dominant colours as HEX / RGB / HSL, CSS variables, JSON and a swatch PNG |
 | Images | Favicon & app icons | favicon.ico + PNG set + Apple touch + PWA icons + HTML snippet + webmanifest |
 | Images | QR code | Link, text, Wi-Fi, e-mail, phone, SMS or vCard as PNG or SVG, any colours |
 | Images | Images to GIF | A set of pictures as an animated GIF: seconds per picture, width, loop, forward-and-back |
+| Images | Compress GIF | Smaller animated GIFs: a size limit (10, 8, 5, 2, 1 MB or your own) or width, colours, frame rate and lossy by hand; speed, transparency and looping kept |
 | Images | Read QR code | Decodes QR codes and barcodes in screenshots and photos: link (shown, not opened), Wi-Fi password, contact, text |
 | PDF | Merge | Combine PDFs in the order you choose |
 | PDF | Document pack | Photos, scans (HEIC too) and PDFs in any mix as one PDF that fits an upload form: size limit in MB, file name in Latin letters |
 | PDF | Safe copy of a document | Writes who a passport or ID copy is for across the whole page, flattens the pages into pictures, drops metadata |
 | PDF | Split | Extract page ranges (click page thumbnails or type them), every page separately, chunks of N pages, or parts under a size limit |
 | PDF | Sign & fill | Draw, type or upload a signature and place it with text, the date, ticks and crosses anywhere on any PDF, rotated pages included |
+| PDF | Edit PDF text | Click any text to change or delete it, add new text in a matching font; the old text is covered (use Redact to remove it for real) |
 | PDF | Organise pages | Every page of one or several PDFs on one board: drag to reorder, rotate or drop single pages, save one PDF |
 | PDF | Rotate | All pages or a selection, several files at once |
 | PDF | Delete pages | Remove listed pages |
@@ -79,17 +82,20 @@ Prefer it small? The ◨ button in the top bar (or right-click the toolbar icon 
 | PDF | PDF to images | PNG or JPEG at 72 / 150 / 300 dpi |
 | PDF | Extract images | The pictures embedded in a PDF at their original resolution |
 | PDF | PDF to text | Text layer as .txt or Markdown with a heading per page, wrapped lines re-joined |
+| PDF | PDF to Word | Editable .docx: paragraphs, headings, bold and italic, columns, pictures; page headers and footers left out |
+| PDF | PDF to Excel | Tables from the text layer to .xlsx or CSV, numbers, percentages, currencies and dates as real cells; one sheet per page or table |
 | PDF | Protect PDF | Password to open (AES-256) and permissions for printing, copying and editing |
 | PDF | Unlock PDF | Removes the password (you type it once) and lifts print / copy / edit restrictions |
 | PDF | Repair PDF | Rebuilds damaged or cut-off files, optional web optimisation (linearise) |
 | PDF | Redact PDF | Draw boxes or find a word; marked pages are rebuilt as images so the text is really gone |
 | PDF | Compare PDFs | Text diff of two versions with the pages that changed, saved as a .diff report |
-| Video & audio | Compress video | Quality presets or a size limit (8 MB Discord, 16 MB WhatsApp, 25 MB e-mail or your own): bitrate and, if needed, resolution go down until it fits; MP4 or WebM; keep, mono or remove the sound |
+| Video & audio | Compress video | Quality presets or a size limit (20 MB Discord, 25 MB e-mail, 100 MB WhatsApp or your own): bitrate and, if needed, resolution go down until it fits; MP4 or WebM; keep, mono or remove the sound |
 | Video & audio | Convert video | MOV (iPhone), MKV, WebM and MP4 to each other; copied as it is when the video already fits the new format, re-encoded to H.264 or VP9 to play everywhere |
 | Video & audio | Trim & edit video | Cut a part, turn, mirror, crop to 9:16, 1:1, 4:5 or 16:9, shrink to 1080p / 720p / 480p, remove the sound |
 | Video & audio | Video to GIF | Pick a part of an MP4 / WebM / MOV, frame rate, width, speed and colours; loops |
 | Video & audio | Video to images | One frame every N seconds, N frames spread evenly, or the frame you stop at; JPEG / PNG / WebP |
 | Video & audio | Video to MP3 | The sound of a video, or an audio file, as MP3 (128 / 192 / 320 kbps) or WAV; trim, mono |
+| Video & audio | Trim & convert audio | Waveform with start and end handles, fades, volume or normalise, MP3 / WAV / M4A / Opus, mono or stereo, split into parts |
 | Word & Excel | Word to PDF | .docx to PDF (print dialog), HTML, Markdown or text: headings, lists, tables, links, pictures |
 | Word & Excel | Excel to CSV / JSON | .xlsx / .xls / .ods sheets to CSV, TSV, JSON, Markdown, HTML or SQL; every sheet or one; dates as ISO |
 | Word & Excel | CSV / JSON to Excel | Tables to an .xlsx or .ods workbook, one sheet per file, numbers and dates kept as such |
@@ -165,6 +171,11 @@ app/tools/media.js   Read QR codes (BarcodeDetector or jsQR) and video / audio t
 app/tools/photo.js   Annotate, ID photo, document scan, transparent background
 app/tools/pack.js    Document pack (photos + PDFs under a size limit) and safe copy of a document
 app/tools/gif.js     Images to GIF (gifenc)
+app/tools/gif-compress.js Compress GIF: its own GIF decoder, re-encoded with gifenc
+app/tools/faces.js, app/faces-worker.js  Blur faces: YuNet (vendor/faces) on ONNX Runtime Web in a worker
+app/tools/pdf-edit.js Edit PDF text (pdf.js text layer, pdf-lib)
+app/tools/pdf-convert.js PDF to Word (.docx written with JSZip) and PDF to Excel (SheetJS)
+app/tools/audio.js   Trim & convert audio: Web Audio, lamejs, Mediabunny for M4A and Opus
 app/tools/privacy.js Privacy check: what images, PDFs and Office files give away, and cleaned copies
 app/insights.js      A look inside dropped files: the facts behind the suggestions on the home page
 app/tools/ocr.js     Image / scanned PDF to text and searchable PDF (Tesseract)
@@ -173,7 +184,7 @@ app/qpdf*.js         qpdf (WebAssembly) in a worker: passwords, permissions, rep
 app/tools/pipeline.js Chains other tools
 app/heic*.js         HEIC/HEIF decoding: libheif (WebAssembly) in a worker, shared by every image tool
 scripts/package.py   Builds Chrome and Firefox zips
-vendor/              pdf-lib, fontkit, pdf.js, marked, JSZip, libheif-js, qpdf, Tesseract (vendor/ocr), ONNX Runtime Web and the ISNet model (vendor/rembg), mammoth and SheetJS (vendor/office), Mediabunny (vendor/mediabunny), gifenc, jsQR, lamejs, qrcode-generator, Noto Sans subset (vendored, no build step)
+vendor/              pdf-lib, fontkit, pdf.js, marked, JSZip, libheif-js, qpdf, Tesseract (vendor/ocr), ONNX Runtime Web and the ISNet model (vendor/rembg), the YuNet face detector (vendor/faces), mammoth and SheetJS (vendor/office), Mediabunny (vendor/mediabunny), gifenc, jsQR, lamejs, qrcode-generator, Noto Sans subset (vendored, no build step)
 icons/               Extension icons (generated by scripts/make_icons.py)
 ```
 
@@ -184,7 +195,7 @@ No build step, no framework, no dependencies to install.
 - Everything runs in browser memory. Very large files (hundreds of MB) may be slow or fail.
 - "Compress PDF" keeps text as text in Smart mode and shrinks only JPEG pictures in RGB or grey; CMYK pictures are left as they are. With a size limit it turns pages into pictures only when nothing else fits.
 - "Privacy check" reports what it knows how to find; it does not certify a file as clean. Comments, tracked changes and hidden sheets in Office files are reported, not removed.
-- Word to PDF keeps the content and structure (headings, lists, tables, pictures, links), not the exact page layout, columns or fonts; old binary `.doc` files are not read. PDF to Word is not implemented.
+- Word to PDF keeps the content and structure (headings, lists, tables, pictures, links), not the exact page layout, columns or fonts; old binary `.doc` files are not read. PDF to Word reads the text layer (run OCR on scans first) and rebuilds paragraphs and headings, not the exact layout; tables come out as tab-separated lines.
 - Video tools use the browser's own decoder: MP4 (H.264) and WebM work everywhere, iPhone HEVC `.mov` only where the browser plays it. A GIF is limited to 600 frames.
 - Compress, Convert and Trim & edit video need WebCodecs (Chrome, Edge, Firefox 130+ on a computer, Safari 26+). They read MP4, MOV, WebM and MKV, not AVI or WMV, and keep the whole result in memory, so a very long 4K video may not fit. A size limit is met by lowering the bitrate and then the resolution; a video too long for the limit is refused with the smallest size that would work.
 - OCR ships with English and Ukrainian. Other languages need a `.traineddata` file (from Tesseract's tessdata) added in the tool; handwriting is not recognised.

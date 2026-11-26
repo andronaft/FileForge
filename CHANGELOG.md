@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.9.0
+
+### Added
+
+- **PDF to Word**: an editable .docx from a PDF's text: paragraphs joined back together, headings, bold and italic,
+  two-column pages read in order, pictures in place, page headers, footers and page numbers left out. Scanned PDFs
+  need Image to text (OCR) first, and the tool says so.
+- **PDF to Excel**: the tables in a PDF (statements, price lists, reports) as .xlsx or CSV, one sheet per page, per
+  table or all on one. Numbers, percentages, amounts in any currency and dates become real cells; codes with leading
+  zeros and phone numbers stay text.
+- **Edit PDF text**: click any text in a PDF to fix a typo, a date, a name or an amount, delete it, or add new text
+  anywhere, in the closest matching font and colour (Cyrillic too). The old text is covered, not removed from the
+  file: the tool says so and points to Redact PDF for anything secret.
+- **Blur faces**: a small neural network (YuNet, MIT, 230 KB) finds the faces in a photo, group photos included, and
+  blurs, pixelates or blacks them out, each scaled to its face. Every face can be turned off, and a missed face or a
+  number plate drawn by hand. Several photos at once.
+- **Trim & convert audio**: cut a song or a recording with handles on its waveform, fade in and out, change the volume
+  or even out the loudness, and save as MP3, WAV, M4A or Opus, mono or stereo, or split it into parts.
+- **Compress GIF**: make an animated GIF fit a size limit (10, 8, 5, 2, 1 MB or your own) by trying fewer colours,
+  lossy frames, fewer frames and a smaller width, or set them yourself. Speed, transparency and looping stay.
+- Under every tool: "On your device · nothing is uploaded".
+- After a result, one-click buttons for the usual next step (HEIC to JPG → compress, remove metadata, images to PDF).
+- The installed web app is in the phone's Share menu: share photos, PDFs or videos to FileForge from the gallery or
+  any app.
+- `?lang=uk` or `?lang=en` in the address picks the language (the site's Ukrainian pages use it) and is remembered.
+
+### Changed
+
+- The page has a real title and a first screen before the app starts, and a list of the tools for browsers without
+  JavaScript.
+- Compress video size presets follow today's limits: 20 MB Discord, 25 MB e-mail, 100 MB WhatsApp (was 8 and 16 MB).
+- Audio files open in Trim & convert audio, GIFs in Compress GIF.
+- 85 tools in total (was 79).
+
+### Fixed
+
+- Extract images from PDF skipped pictures shared between pages.
+
 ## 1.8.0
 
 ### Added
