@@ -15,6 +15,7 @@ import { pdfTools, renderPdfPages } from "./tools/pdf.js";
 import { pdfMoreTools } from "./tools/pdf-more.js";
 import { packTools } from "./tools/pack.js";
 import { gifTools } from "./tools/gif.js";
+import { gifCompressTools } from "./tools/gif-compress.js";
 import { privacyTools } from "./tools/privacy.js";
 import { markdownTools } from "./tools/markdown.js";
 import { dataTools } from "./tools/data.js";
@@ -31,7 +32,7 @@ for (const n of document.querySelectorAll("[aria-label]")) n.setAttribute("aria-
 for (const n of document.querySelectorAll("[title]")) n.title = t(n.title);
 
 const groups = [
-  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...rembgTools, ...photoTools, ...ocrTools, ...imageTools.slice(1), ...gifTools, ...qrTools] },
+  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...rembgTools, ...photoTools, ...ocrTools, ...imageTools.slice(1), ...gifTools, ...gifCompressTools, ...qrTools] },
   { id: "video", title: "Video & audio", icon: "video", tools: [...videoEditTools, ...videoTools, ...audioTools] },
   { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools.slice(0, 1), ...packTools, ...pdfTools.slice(1), ...pdfMoreTools] },
   { id: "office", title: "Word & Excel", icon: "office", tools: officeTools },
