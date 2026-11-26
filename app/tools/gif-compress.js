@@ -314,7 +314,7 @@ export async function encodeGif(frames, w, h, { colors = 256, lossy = false, loo
 
 // ---------- the tool ----------
 
-const TARGETS = [["none", "No limit"], ["8", "8 MB (Discord)"], ["10", "10 MB"], ["5", "5 MB"], ["2", "2 MB"], ["1", "1 MB"], ["custom", "Your own size"]];
+const TARGETS = [["none", "No limit"], ["10", "10 MB"], ["8", "8 MB"], ["5", "5 MB"], ["2", "2 MB"], ["1", "1 MB"], ["custom", "Your own size"]];
 const ORDINAL = { 2: "every 2nd frame", 3: "every 3rd frame" };
 
 /** Output size for a maximum width, keeping the shape. */

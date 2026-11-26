@@ -2,6 +2,12 @@
 // Each entry is the inner SVG markup; icon(name) wraps it in an <svg>.
 
 const ICONS = {
+  "blur-faces": '<circle cx="12" cy="9" r="5"/><path d="M4 21c1.6-3.8 4.6-5.7 8-5.7s6.4 1.9 8 5.7"/><path d="M9.5 8h5M9.5 10.5h5"/>',
+  "pdf-edit": '<path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="M17.8 3.2a2 2 0 0 1 2.9 2.9L12.5 14.3 9 15l.7-3.5z"/>',
+  "pdf-to-word": '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M7.5 12l1.3 6 1.7-4.5 1.7 4.5 1.3-6"/>',
+  "pdf-to-excel": '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/><path d="M13 13l5 5M18 13l-5 5"/>',
+  "audio-edit": '<path d="M3 12h1.5M6.5 8v8M10 4.5v15M13.5 8.5v7M17 6v12M20.5 10.5v3"/>',
+  "gif-compress": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9 9l3 3 3-3M9 15l3-3 3 3"/>',
   // tools: images
   crop: '<path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/>',
   resize: '<path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>',

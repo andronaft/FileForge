@@ -674,7 +674,7 @@ function canvasFilterWorks() {
 }
 
 /** Paints the redaction boxes onto `canvas` in place. boxes: [{x, y, w, h}] in canvas pixels. */
-function applyRedactions(canvas, boxes, mode, strengthPct) {
+export function applyRedactions(canvas, boxes, mode, strengthPct) {
   const ctx = canvas.getContext("2d");
   if (mode === "blur" && !canvasFilterWorks()) mode = "pixelate";
   for (const b of boxes) {

@@ -136,14 +136,14 @@ const LEVELS = { high: "QUALITY_HIGH", medium: "QUALITY_MEDIUM", low: "QUALITY_L
 const compressVideoTool = {
   id: "video-compress",
   title: "Compress video",
-  description: "Make a video smaller for a messenger, e-mail or an upload form: pick a quality, or a size limit such as 16 MB for WhatsApp, and FileForge lowers the bitrate and, if needed, the resolution.",
+  description: "Make a video smaller for a messenger, e-mail or an upload form: pick a quality, or a size limit such as 25 MB for e-mail, and FileForge lowers the bitrate and, if needed, the resolution.",
   keywords: ["compress video", "reduce video size", "smaller video", "shrink mp4", "video size", "telegram", "whatsapp", "discord", "email video", "mb", "стиснути відео", "зменшити відео", "розмір відео", "для телеграм", "для вайбер"],
   accept: ACCEPT,
   hint: "Videos: MP4, MOV (iPhone), WebM, MKV",
   runLabel: "Compress",
   renderOptions(root, files) {
     const mode = select([["medium", "Balanced"], ["high", "High quality"], ["low", "Small file"], ["lowest", "Smallest file"], ["fit", "Fit into a size limit"]], "medium");
-    const limit = select([["8", "8 MB (Discord)"], ["10", "10 MB"], ["16", "16 MB (WhatsApp)"], ["25", "25 MB (e-mail)"], ["50", "50 MB"], ["100", "100 MB"], ["custom", "Other…"]], "16");
+    const limit = select([["8", "8 MB"], ["10", "10 MB"], ["16", "16 MB"], ["20", "20 MB (Discord)"], ["25", "25 MB (e-mail)"], ["50", "50 MB"], ["100", "100 MB (WhatsApp)"], ["custom", "Other…"]], "25");
     const custom = number(20, { min: 1, step: "1" });
     const size = select([["auto", "Automatic"], ["0", "Keep the original"], ["1080", "1080p"], ["720", "720p"], ["480", "480p"], ["360", "360p"]], "auto");
     const sound = select([["keep", "Keep"], ["mono", "Mono, smaller"], ["none", "Remove the sound"]], "keep");

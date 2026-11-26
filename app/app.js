@@ -11,11 +11,15 @@ import { officeTools } from "./tools/office.js";
 import { videoTools } from "./tools/video.js";
 import { videoEditTools } from "./tools/videoedit.js";
 import { qrTools, audioTools } from "./tools/media.js";
+import { audioEditTools } from "./tools/audio.js";
 import { pdfTools, renderPdfPages } from "./tools/pdf.js";
 import { pdfMoreTools } from "./tools/pdf-more.js";
 import { packTools } from "./tools/pack.js";
 import { gifTools } from "./tools/gif.js";
 import { gifCompressTools } from "./tools/gif-compress.js";
+import { faceTools } from "./tools/faces.js";
+import { pdfEditTools } from "./tools/pdf-edit.js";
+import { pdfConvertTools } from "./tools/pdf-convert.js";
 import { privacyTools } from "./tools/privacy.js";
 import { markdownTools } from "./tools/markdown.js";
 import { dataTools } from "./tools/data.js";
@@ -32,9 +36,9 @@ for (const n of document.querySelectorAll("[aria-label]")) n.setAttribute("aria-
 for (const n of document.querySelectorAll("[title]")) n.title = t(n.title);
 
 const groups = [
-  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...rembgTools, ...photoTools, ...ocrTools, ...imageTools.slice(1), ...gifTools, ...gifCompressTools, ...qrTools] },
-  { id: "video", title: "Video & audio", icon: "video", tools: [...videoEditTools, ...videoTools, ...audioTools] },
-  { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools.slice(0, 1), ...packTools, ...pdfTools.slice(1), ...pdfMoreTools] },
+  { id: "images", title: "Images", icon: "image", tools: [...imageTools.slice(0, 1), ...rembgTools, ...photoTools, ...ocrTools, ...imageTools.slice(1, 14), ...faceTools, ...imageTools.slice(14), ...gifTools, ...gifCompressTools, ...qrTools] },
+  { id: "video", title: "Video & audio", icon: "video", tools: [...videoEditTools, ...videoTools, ...audioTools, ...audioEditTools] },
+  { id: "pdf", title: "PDF", icon: "pdf", tools: [...pdfTools.slice(0, 1), ...packTools, ...pdfTools.slice(1), ...pdfEditTools, ...pdfConvertTools, ...pdfMoreTools] },
   { id: "office", title: "Word & Excel", icon: "office", tools: officeTools },
   { id: "text", title: "Text & data", icon: "text", tools: [...markdownTools, ...dataTools, ...textTools] },
   { id: "files", title: "Files", icon: "file", tools: [...privacyTools, ...fileTools] },
@@ -1172,10 +1176,11 @@ export function toolFor(file) {
   if (ty === "application/pdf") return "pdf-split";
   if (ty === "image/heic" || ty === "image/heif") return "heic";
   if (ty.startsWith("video/")) return "video-compress";
-  if (ty.startsWith("audio/")) return "audio-extract";
+  if (ty.startsWith("audio/")) return "audio-edit";
   if (/wordprocessingml/.test(ty)) return "word";
   if (/spreadsheet|ms-excel/.test(ty)) return "excel-read";
   if (/zip/.test(ty)) return "zip-extract";
+  if (ty === "image/gif") return "gif-compress";
   if (ty.startsWith("image/")) return "crop";
   if (/json/.test(ty)) return "json-format";
   if (/csv|tab-separated/.test(ty)) return "csv-json";

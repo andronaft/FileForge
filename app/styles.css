@@ -618,3 +618,13 @@ table.meta td { padding: 3px 0; word-break: break-word; }
 }
 :root[data-view="side"] .leak-row { grid-template-columns: 10px minmax(0, 1fr); }
 :root[data-view="side"] .leak-value, :root[data-view="side"] .leak-tag, :root[data-view="side"] .leak-thumb, :root[data-view="side"] .leak-why { grid-column: 2; justify-self: start; }
+
+/* Edit PDF text (tools/pdf-edit.js) */
+.edit-run { outline: 1px dashed transparent; }
+.edit-run:not(.changed):hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.edit-run.changed { outline: 1px dotted var(--accent); }
+.edit-changes { margin: 4px 0 0; padding-left: 20px; font-size: 13px; color: var(--muted); }
+.edit-input::selection { background: var(--accent-soft); }
+
+/* Trim & convert audio (tools/audio.js) */
+.audio-wave { display: block; width: 100%; height: 120px; touch-action: none; cursor: ew-resize; background: var(--surface-2); border-radius: var(--radius-s); }

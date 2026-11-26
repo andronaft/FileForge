@@ -1452,7 +1452,7 @@ const extractImagesTool = {
           if (o.dedupe.input.checked && seen.has(name)) continue;
           seen.add(name);
           let img;
-          try { img = await new Promise((res, rej) => { const timer = setTimeout(() => rej(new Error("timeout")), 10000); (name.startsWith("g_") ? doc.commonObjs : page.objs).get(name, (v) => { clearTimeout(timer); res(v); }); }); } catch (_) { continue; }
+          try { img = await new Promise((res, rej) => { const timer = setTimeout(() => rej(new Error("timeout")), 10000); (name.startsWith("g_") ? page.commonObjs : page.objs).get(name, (v) => { clearTimeout(timer); res(v); }); }); } catch (_) { continue; }
           if (!img || Math.max(img.width, img.height) < min) continue;
           const c = imageDataToCanvas(img);
           k++;
