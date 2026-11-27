@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9.1
 
 - Network locked by the browser: the extension's and the web app's pages carry a Content Security Policy that lets them connect only to FileForge's own files (`default-src 'self'; connect-src 'self' blob: data:`). Any upload attempt, by a bug or a library, is blocked by the browser itself.
 - The extension no longer asks for access to websites (the optional `<all_urls>` host permission is gone, in Chrome and Firefox). The right-click entries read the image or PDF inside the tab you clicked, through activeTab, and hand it over; when a site won't let its page read the file again, FileForge asks you to save it and drop it in.
