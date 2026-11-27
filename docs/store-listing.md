@@ -102,7 +102,7 @@ EVERYDAY DETAILS
 • Side panel mode: keep FileForge open beside the page you are working on; the right-click entries then load files straight into the panel
 
 PRIVACY AND PERMISSIONS
-Everything runs locally: there is no server, no account, no analytics and no network requests. The extension needs only the contextMenus permission for the right-click entry and sidePanel to show itself in the side panel. When you use "Edit image in FileForge" on a page, it asks for access to that one site so it can read the image, and only then.
+Everything runs locally: there is no server, no account, no analytics and no network requests. The extension asks for no access to websites. Its pages carry a Content Security Policy that lets them connect only to the extension's own files, so the browser itself blocks any upload. When you use "Edit image in FileForge" on a page, the image is read inside that tab and handed over, only for that click.
 
 Open source: https://github.com/andronaft/FileForge
 Web version: https://zhukovskyi.space/tools/fileforge/app/
@@ -181,9 +181,8 @@ Edit and convert the user's own image, PDF and text files locally in the browser
 - **activeTab**: lets "Screenshot the visible part" and "Screenshot the whole page" (right-click menu of a page or of the toolbar icon) capture the tab the user clicked in, once. Nothing is captured or read without that click, and no other tab is touched.
 - **contextMenus**: the right-click entries. On images: "Edit image", "Convert to JPG, PNG or WebP", "Read the text in the image", "Read the QR code". On PDF links and pages: "Open PDF in FileForge". On pages and links: the two screenshot entries and "QR code for this address" (the address is turned into a QR code inside the extension, it is not sent anywhere).
 - **sidePanel**: shows the FileForge page in Chrome's side panel when the user picks "Open in side panel" or the ◨ button; the page is the extension's own, and the permission gives no access to web pages.
-- **scripting**: only used when "Edit image in FileForge" is chosen on an image that exists solely inside the page (a `blob:` URL, e.g. an image editor's canvas or a pasted screenshot). A one-line script runs in that tab, after the user granted that site, to read that one image's bytes. No content scripts are registered and nothing runs on pages the user did not pick.
-- **Optional host permissions (`<all_urls>`)**: requested for a single site, only when the user chooses one of those menu items there, so the extension can fetch that image or PDF. Never requested up front.
-- **`'wasm-unsafe-eval'` in the CSP**: lets the extension compile the WebAssembly it ships with: the HEIC decoder (libheif, `vendor/libheif-bundle.js`), the PDF password and repair engine (qpdf, `vendor/qpdf.wasm`) the OCR engine (Tesseract, `vendor/ocr/`) and ONNX Runtime for the background-removal model (`vendor/rembg/`). JavaScript `eval` stays forbidden and no code or data is loaded from the network; the OCR language models and the background model are inside the package.
+- **scripting**: only used when one of the image or PDF menu entries is chosen. A one-off script runs in that tab (allowed by the click through activeTab) to read that one image's or PDF's bytes, the way the page itself loaded them, and hand them to the extension page. No content scripts are registered and nothing runs on pages the user did not pick.
+- **`'wasm-unsafe-eval'` in the CSP**: lets the extension compile the WebAssembly it ships with: the HEIC decoder (libheif, `vendor/libheif-bundle.js`), the PDF password and repair engine (qpdf, `vendor/qpdf.wasm`) the OCR engine (Tesseract, `vendor/ocr/`) and ONNX Runtime for the background-removal model (`vendor/rembg/`). JavaScript `eval` stays forbidden, and the rest of the policy (`default-src 'self'; connect-src 'self' blob: data:`) stops the extension's pages from connecting anywhere but the extension itself; the OCR language models and the background model are inside the package.
 
 ## Data usage
 

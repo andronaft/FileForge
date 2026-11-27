@@ -8,7 +8,6 @@
 
 Firefox differences applied automatically:
   - background.scripts instead of background.service_worker
-  - optional_permissions instead of optional_host_permissions
   - browser_specific_settings.gecko (add-on id, min version, data collection = none)
   - sidebar_action instead of Chrome's side_panel key and sidePanel permission
 """
@@ -59,7 +58,6 @@ build("chrome", chrome)
 
 firefox = dict(base)
 firefox["background"] = {"scripts": ["background.js"]}
-firefox.pop("optional_host_permissions", None)
 firefox.pop("side_panel", None)
 firefox["permissions"] = [p for p in base["permissions"] if p != "sidePanel"]
 firefox["sidebar_action"] = {
@@ -68,7 +66,6 @@ firefox["sidebar_action"] = {
     "default_icon": "icons/icon32.png",
     "open_at_install": False,
 }
-firefox["optional_permissions"] = ["<all_urls>"]
 firefox["browser_specific_settings"] = {
     "gecko": {
         "id": AMO_ID,

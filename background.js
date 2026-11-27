@@ -129,44 +129,51 @@ async function openApp(tool, params = {}, tab, late = false) {
   api.tabs.create({ url: url.toString() });
 }
 
-async function askOrigin(url) {
-  try {
-    return await api.permissions.request({ origins: [new URL(url).origin + "/*"] });
-  } catch (_) {
-    return false;
-  }
-}
-
-// Reads a data:/blob: image. blob: URLs only resolve inside the page that made them, so those go through a script in that tab.
-async function readEmbedded(src, tab, pageUrl) {
-  if (src.startsWith("data:")) return src;
-  if (!tab?.id || !pageUrl || !(await askOrigin(pageUrl))) return null;
+// The extension's own pages may only connect to the extension itself (connect-src in manifest.json), so a file
+// shown on a page is read inside that tab, by a one-off script the menu click allows there (activeTab), and handed
+// over as a data: URL. No host permission is needed or asked for; FileForge itself never connects to the site.
+const HANDOFF_MAX = 40 * 1024 * 1024; // a data: URL of this goes through extension messaging comfortably
+async function readInTab(src, tab) {
+  if (src.startsWith("data:")) return { dataUrl: src };
+  if (!tab?.id) return null;
   const [res] = await api.scripting.executeScript({
     target: { tabId: tab.id },
-    func: async (u) => {
-      const blob = await (await fetch(u)).blob();
-      return new Promise((resolve) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob); });
+    func: async (u, max) => {
+      try {
+        const r = await fetch(u);
+        if (!r.ok) return { error: "http" };
+        const blob = await r.blob();
+        if (blob.size > max) return { error: "big" };
+        const dataUrl = await new Promise((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = reject; fr.readAsDataURL(blob); });
+        return { dataUrl, type: blob.type };
+      } catch (_) { return { error: "blocked" }; }
     },
-    args: [src],
+    args: [src, HANDOFF_MAX],
   });
-  return typeof res?.result === "string" ? res.result : null;
+  return res?.result && typeof res.result.dataUrl === "string" ? res.result : null;
 }
 
-// Opens the app with the file at `src` loaded into `tool`, after asking for that one site.
+/** A file name for `src`: the last part of its path, or "image"/"file" with an extension from its type. */
+function nameFor(src, type) {
+  let base = "";
+  if (!src.startsWith("data:") && !src.startsWith("blob:")) {
+    try { base = decodeURIComponent(new URL(src).pathname.split("/").pop() || ""); } catch (_) { base = ""; }
+  }
+  const ext = ((type || src.match(/^data:([\w/+.-]+)/)?.[1] || "").split("/")[1] || "").replace("jpeg", "jpg").replace("svg+xml", "svg");
+  if (base && base.includes(".")) return base;
+  return `${base || (type?.startsWith("image/") || src.startsWith("data:image") ? "image" : "file")}${ext ? "." + ext : ""}`;
+}
+
+// Opens the app with the file at `src` loaded into `tool`.
 async function openWith(tool, src, info, tab) {
   if (!src) return openApp(tool, {}, tab);
-  if (src.startsWith("data:") || src.startsWith("blob:")) {
-    let dataUrl = null;
-    try { dataUrl = await readEmbedded(src, tab, info.pageUrl); } catch (_) { dataUrl = null; }
-    if (!dataUrl) return openApp(tool, { note: "embedded" }, tab);
-    const id = String(Date.now()) + Math.random().toString(36).slice(2);
-    const ext = (dataUrl.match(/^data:image\/(\w+)/)?.[1] || "png").replace("jpeg", "jpg");
-    handoff.set(id, { dataUrl, name: `image.${ext}` });
-    setTimeout(() => handoff.delete(id), 60_000);
-    return openApp(tool, { src: `handoff:${id}` }, tab);
-  }
-  const granted = await askOrigin(src);
-  openApp(tool, granted ? { src } : {}, tab);
+  let got = null;
+  try { got = await readInTab(src, tab); } catch (_) { got = null; }
+  if (!got) return openApp(tool, { note: src.startsWith("data:") || src.startsWith("blob:") ? "embedded" : "remote" }, tab);
+  const id = String(Date.now()) + Math.random().toString(36).slice(2);
+  handoff.set(id, { dataUrl: got.dataUrl, name: nameFor(src, got.type) });
+  setTimeout(() => handoff.delete(id), 60_000);
+  return openApp(tool, { src: `handoff:${id}` }, tab);
 }
 
 // ---------- screenshots ----------

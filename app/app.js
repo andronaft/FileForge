@@ -1222,6 +1222,7 @@ async function loadFromSrc() {
   const params = new URLSearchParams(location.search);
   const src = params.get("src");
   if (params.get("note") === "embedded") toast("That image is embedded in the page and could not be read. Save it and drop it here instead.", "error");
+  if (params.get("note") === "remote") toast("Could not load that file automatically. Save it and drop it here instead.", "error");
   if (params.get("note") === "shot") toast("This page cannot be captured. Browser pages (settings, the extension store, the new tab page) are off limits to extensions.", "error");
   // Text handed over by the extension (a page address for the QR tool): into the tool's first text box.
   const text = params.get("text");
@@ -1233,15 +1234,12 @@ async function loadFromSrc() {
   if (src || text || params.has("note")) history.replaceState(null, "", location.pathname + (sideView ? "?view=side" : "") + location.hash);
   if (!src) return;
   try {
-    let url = src, name = "file";
-    if (src.startsWith("handoff:")) {
-      // The extension's background script fetched an embedded (data:/blob:) image and holds it for us.
-      const got = await ext.runtime.sendMessage({ type: "fileforge-pull", id: src.slice(8) });
-      if (!got) throw new Error("nothing pending");
-      url = got.dataUrl; name = got.name || name;
-    } else {
-      name = decodeURIComponent(new URL(src).pathname.split("/").pop() || "file") || "file";
-    }
+    // Only files the extension's background script read inside the tab and holds for us (a data: URL): this page
+    // may not connect anywhere else (connect-src 'self' blob: data:).
+    if (!src.startsWith("handoff:")) throw new Error("not a hand-over");
+    const got = await ext.runtime.sendMessage({ type: "fileforge-pull", id: src.slice(8) });
+    if (!got) throw new Error("nothing pending");
+    const url = got.dataUrl, name = got.name || "file";
     const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const blob = await res.blob();

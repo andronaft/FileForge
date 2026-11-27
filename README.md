@@ -128,7 +128,7 @@ The interface is in English and Ukrainian (picked from the browser language, swi
 2. Click **Load unpacked** and choose this folder (for Firefox: `about:debugging` → **Load Temporary Add-on** → `dist/firefox/manifest.json` after `python3 scripts/package.py`).
 3. Click the FileForge icon in the toolbar, or right-click an image on any page and pick **Edit image in FileForge**.
 
-The context menu asks for permission to read images from that site only when you first use it. The extension requests no host permissions up front.
+The extension asks for no access to websites. A menu click reads that one image or PDF inside the tab (activeTab + scripting) and hands it over. The extension's pages may connect only to the extension itself (`connect-src 'self' blob: data:` in `manifest.json`), so the browser blocks any upload; when a site refuses to let its page read the file again, FileForge asks you to save it and drop it in.
 
 ## Run as a web app
 
@@ -146,7 +146,7 @@ Then open `http://localhost:8765/app/index.html`.
 python3 scripts/package.py
 ```
 
-This writes `dist/fileforge-chrome-<version>.zip` and `dist/fileforge-firefox-<version>.zip`. The Firefox build swaps the background service worker for an event page, moves the optional host permission to `optional_permissions`, adds the Gecko add-on id, replaces Chrome's `side_panel` with `sidebar_action`.
+This writes `dist/fileforge-chrome-<version>.zip` and `dist/fileforge-firefox-<version>.zip`. The Firefox build swaps the background service worker for an event page, adds the Gecko add-on id, replaces Chrome's `side_panel` with `sidebar_action`.
 
 ## Project layout
 
